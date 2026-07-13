@@ -96,43 +96,36 @@ Two things drive every layout change below:
 
 ---
 
-## 3. Zepp OS watchface project model (how our files will be laid out)
+## 3. Zepp OS watchface project model (SCAFFOLDED — confirmed facts)
 
-A Zepp OS watchface is a **Mini Program with `appType: "watchface"`**, built by
-the same Zeus toolchain the Medium article used for the app template — but it is
-NOT the kpay app template (that's an app with index/game/menu/help pages and
-KiezelPay). We want a clean watchface scaffold.
+Scaffolded with `zeus create bipmax-contours` (API Level **2.0**, **Empty**
+watchface template, platform **Amazfit Bip Max**). It lives at
+`watchface/bipmax-contours/` (our git repo root is `watchface/`).
 
-Get the scaffold one of two ways:
-- `zeus create` and choose the **watchface** template, **or**
-- copy a watchface sample from the official
-  [`zepp-health/zeppos-samples`](https://github.com/zepp-health/zeppos-samples)
-  repo.
+**Confirmed from the generated project:**
+- `configVersion`: **v2**, `apiVersion` **2.0.0**
+- Bip Max target key: **`432x514-amazfit-bip-max`** → confirms **432 × 514**
+- Bip Max `deviceSource`: **`11206915`**, internal name **`PikeW`**
+- `designWidth`: **432** (so `px()` ≈ identity; our pixel coords line up)
+- Entry: `watchface/index` → `WatchFace({ onInit, build, onDestroy })`
+- Auto-assigned local `appId`: **23492** (fine for personal use)
+- Asset folder: **`assets/432x514-amazfit-bip-max/`**
 
-Expected project shape (target: `/Users/jtorres/Workspaces/pnb/zepp-apps/watchface/`):
+Actual project shape:
 
 ```
-watchface/
-├─ app.json                     # appType:"watchface", appId, platforms[], designWidth
-├─ app.js                       # app entry (minimal for a watchface)
-├─ assets/
-│  └─ <bip-max-device>/
-│     ├─ contour_background.png # our 432×514 terrain render (the key asset)
-│     ├─ steps_icon.png         # optional: baked shoe icon
-│     └─ ...                    # any digit / battery images
-├─ watchface/
-│  └─ index.js                  # the watchface build() — foreground widgets
-└─ ...
+bipmax-contours/
+├─ app.json                       # configVersion v2, targets.432x514-amazfit-bip-max
+├─ app.js                         # App({ onCreate, onDestroy })
+├─ assets/432x514-amazfit-bip-max/
+│  ├─ icon.png                    # scaffold launcher icon
+│  └─ contour_background.png      # our 432×514 terrain art (copied in ✅)
+└─ watchface/
+   └─ index.js                    # WatchFace build() — foreground widgets (written ✅)
 ```
 
-Key `app.json` fields to set:
-- `app.appType`: `"watchface"`
-- `app.appId`: our own id (create an app in the Zepp Developer Console to get one;
-  no monetization needed)
-- `platforms`: the Bip Max entry, e.g. `{ "name": "bip-max", "deviceSource": <id> }`
-  (id from the device list — **TBD, confirm**)
-- `designWidth`: set to the Bip Max width (`432`) so `px()` maps 1:1 and our
-  pixel coordinates from the render line up with the layout
+Foreground widgets we'll use (Zepp `@zos/ui` / `@zos/sensor`):
+- **Background**: `createWidget(widget.IMG, { x:0, y:0, src: 'contour_background.png' })`
 
 Foreground widgets we'll use (Zepp `@zos/ui` / `@zos/sensor`):
 - **Background**: `createWidget(widget.IMG, { x:0, y:0, src: 'contour_background.png' })`
@@ -394,17 +387,24 @@ the Bip Max's Zepp OS version when we build it.
 
 ---
 
-## 10. Open items to confirm before coding
+## 10. Open items
 
-- [ ] Bip Max **`deviceSource`** id + exact resolution from the Zepp device list.
-- [ ] Bip Max emulator available in the Zepp simulator (else dev on nearest
+Resolved by scaffolding:
+- [x] Bip Max `deviceSource` + resolution → **11206915 (PikeW), 432×514** (§3).
+- [x] Bip Max is a first-class Zeus platform ("Amazfit Bip Max").
+- [x] `appId` → auto-assigned **23492** (personal use; no console app needed).
+- [x] Background reshape → reused existing art at 432×514 (no Python) (§4).
+
+Still open — verify in the simulator (see the reconcile block at the bottom of
+`bipmax-contours/watchface/index.js`):
+- [ ] `@zos/sensor` `Time` method for weekday (`getDay()` vs `getWeekDay()`) and
+      `onPerMinute` existence.
+- [ ] `FILL_RECT` width update via `prop.MORE {w}` (else battery = text-only).
+- [ ] `WIDGET_DELEGATE` `resume_call` name.
+- [ ] Bip Max emulator downloadable in the Zepp simulator (else dev on nearest
       rectangular device + `zeus preview` on the real watch).
-- [ ] Bip Max accepts developer-preview watchfaces (confirm on the physical
-      watch).
-- [ ] `render_shaded_contours.py` width/height flags — confirm it can output a
-      non-square 432×514 (add crop step if it's square-only).
+- [ ] Bip Max accepts developer-preview watchfaces (confirm on the physical watch).
 - [ ] Decide baked-vs-widget for the day/date circle (baking recommended).
-- [ ] Get an `appId` from the Zepp Developer Console for `app.json`.
 
 ## 11. Source references
 

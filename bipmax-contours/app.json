@@ -1,0 +1,49 @@
+{
+  "configVersion": "v2",
+  "app": {
+    "appId": 23492,
+    "appName": "Contour Shade",
+    "appType": "watchface",
+    "version": {
+      "code": 1,
+      "name": "1.0.0"
+    },
+    "icon": "icon.png",
+    "vender": "jtorres",
+    "description": "Topographic contour + hillshade watchface"
+  },
+  "permissions": [],
+  "runtime": {
+    "apiVersion": {
+      "compatible": "2.0.0",
+      "target": "2.0.0",
+      "minVersion": "2.0.0"
+    }
+  },
+  "targets": {
+    "432x514-amazfit-bip-max": {
+      "module": {
+        "watchface": {
+          "path": "watchface/index",
+          "main": 1,
+          "editable": 0,
+          "lockscreen": 0,
+          "hightCost": 0
+        }
+      },
+      "platforms": [
+        {
+          "name": "PikeW",
+          "deviceSource": 11206915
+        }
+      ],
+      "designWidth": 432
+    }
+  },
+  "i18n": {
+    "en-US": {
+      "appName": "Contour Shade"
+    }
+  },
+  "defaultLanguage": "en-US"
+}
