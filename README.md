@@ -1,0 +1,1 @@
+# zepp-bipmax-watchface-contours
