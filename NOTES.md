@@ -149,6 +149,68 @@ keeps the face fast and battery-friendly.
 
 ---
 
+## 3d. Device build learnings (HARD-WON — read before editing `index.js`)
+
+Everything below was discovered by building to the **real Bip Max** via
+`zeus preview` (the simulator has no Bip Max model yet). Each item cost a
+black-screen or a wasted round-trip. A thrown error anywhere in `WatchFace.build()`
+aborts the **entire** face → **black screen** (not a partial render), so defensive
+coding matters a lot.
+
+### What works (confirmed on-device)
+- **Background**: `createWidget(widget.IMG, { x:0, y:0, src:'contour_background.png' })`
+  renders full-bleed. The 432×514 PNG in `assets/432x514-amazfit-bip-max/` is
+  bundled + converted to TGA at build (`PNG2TGA` in the build log). ✅
+- **A solid `widget.FILL_RECT` first** is a useful diagnostic backdrop — if you
+  see the fill but no image, the image is the problem; if you see neither, render
+  itself failed.
+- **Time** via `@zos/sensor` `Time`: `new Time()`, `getHours()`, `getMinutes()`.
+  Two `TEXT` widgets (orange HH right-justified to center + white `:MM` left) give
+  the two-color clock. Update with `widget.setProperty(prop.MORE, { text })`. ✅
+- **Static widgets**: `TEXT`, `FILL_RECT`, `CIRCLE`, `ARC` all render. ✅
+
+### What does NOT work (and the black-screen traps)
+- ❌ **OS replacement tags** (`[HOUR_24_Z]`, `[MIN_Z]`, `[SC]`, `[BATTERY]`, …)
+  are a **Watchface-Maker (GUI) feature only**. In a **code** watchface they
+  render as **literal text** — they are NOT substituted. → In code you must read
+  the sensor and set the text yourself. (This wasted a build: the face showed a
+  literal `[HOUR...` string.)
+- ❌ **`import { Battery } from '@zos/sensor'`** — that export **does not exist**.
+  Importing it black-screened build #1. Battery is read a different way (still
+  TBD — likely a `data_type.BATTERY` widget or a `@zos/device` call; **not** a
+  sensor class). Battery is currently **deferred**.
+- ❌ **`time.onPerMinute(cb)`** — exists in the API but **did not tick** the time
+  on this Bip Max firmware. Replaced with **`setInterval(drawTime, 1000)`**, which
+  works (polls each second; ~1s lag on minute rollover is expected). `onPerMinute`
+  was wrapped in `try/catch`, so its silent failure just left the time frozen
+  after the initial paint — misleading. Lesson: guards hide failures; prefer the
+  approach that actually works.
+- ⚠️ **`@zos/sensor` `Step`** (`new Step()`, `getCurrent()`, `onChange()`) is
+  valid in APP samples but **threw at runtime in the watchface** (black-screened
+  build #2 before it was guarded). Strong suspicion: **missing permission** in
+  `app.json` (`"permissions": []` currently). Step access is now fully wrapped in
+  `try/catch` so it can't blank the face; the count sits at `0` until the
+  permission is added. **NEXT FIX: add the step-data permission to `app.json`.**
+
+### Rules of thumb going forward
+1. Add one element per `zeus preview`, verify on-device, then the next.
+2. Wrap every sensor construction + read in `try/catch`; create the UI widget
+   *outside* the guard so text still renders if the sensor fails.
+3. Don't trust a guarded call that "doesn't crash" — verify it actually updates.
+4. Prefer `setInterval` for periodic redraws until an event API is proven.
+
+### Preview/iteration loop that works
+```bash
+cd bipmax-contours
+zeus preview                      # pick 432x514-amazfit-bip-max → fresh QR
+# phone: Device → General → Developer Mode → Watch Face → + → Scan
+# then tap/raise wrist to wake the watch
+```
+The QR **expiry is irrelevant** to a black screen — that's always a code crash,
+not an expired code. The QR only gates the transfer.
+
+---
+
 ## 4. Background image — REUSE the existing render (no Python)
 
 **Decision: we do NOT re-run `render_shaded_contours.py`.** That script only
@@ -278,22 +340,29 @@ to the top/bottom edges (respect Zepp's 2px edge safe-area).
 
 ---
 
-## 6. Foreground widget build order (in `watchface/index.js`)
+## 6. Foreground build order + current status (in `watchface/index.js`)
 
-1. Background `IMG` (the 432×514 PNG) — first, so everything draws on top.
-2. Day/Date circle (only if NOT baked into the PNG): `ARC`/`CIRCLE` + weekday
-   `TEXT` (orange) + date `TEXT` (white).
-3. Time: orange-hours + white-minutes. Two `TEXT` widgets (HH and :MM) or an
-   `IMG_TIME`. Update on tick.
-4. Steps: orange "S" label `TEXT` + grey count `TEXT` from `@zos/sensor` Step
-   (v1: no icon).
-5. Battery: `@zos/device` level → colored `FILL_RECT`/`ARC` + `%` `TEXT`.
-6. AOD layer in `app.json`: dim time-only variant.
+Build one element per `zeus preview` and verify on-device (see §3d). Read the
+sensor and set text yourself — **tags do not work in code**.
 
-Match the palette from §1. Use white text with subtle dark outline/shadow where
-it sits over busy terrain (Zepp text has no built-in outline like the Garmin
-`drawOutlined*` helpers — either bake a faint dark plate into the PNG under text
-zones, or use a semi-transparent dark `FILL_RECT` behind text).
+1. **Solid `FILL_RECT` backdrop** (diagnostic) + **background `IMG`** — first. ✅
+2. **Time**: two `TEXT` widgets — orange HH (right→center) + white `:MM`
+   (center→right). Read `@zos/sensor` `Time.getHours()/getMinutes()`; redraw with
+   **`setInterval(draw, 1000)`** (NOT `onPerMinute` — it didn't tick). ✅ DONE
+3. **Steps**: orange "S" `TEXT` + grey count `TEXT`. `@zos/sensor` `Step` is
+   wrapped in `try/catch`. ⚠️ Currently shows `0` — **needs a step permission in
+   `app.json`** (next fix).
+4. **Day/Date circle**: `CIRCLE` + `ARC` ring + weekday `TEXT` (orange) + date
+   `TEXT` (white), from `Time` (weekday/date getters TBD — verify method names).
+   ⏳ NOT STARTED. Consider baking the ring into the PNG.
+5. **Battery**: colored level + `%`. ❌ `@zos/sensor` Battery does not exist —
+   API still TBD (`data_type.BATTERY` widget or `@zos/device`). ⏳ DEFERRED.
+6. **AOD layer** in `app.json`: dim time-only variant. ⏳ NOT STARTED.
+
+Match the palette from §1. Zepp text has no built-in outline (unlike the Garmin
+`drawOutlined*` helpers); where text sits over busy terrain, either bake a faint
+dark plate into the PNG under text zones or put a semi-transparent dark
+`FILL_RECT` behind the text.
 
 ---
 
@@ -323,26 +392,43 @@ zeus build                  # produces the .zab in dist/
 
 ---
 
-## 8. Install onto the real Bip Max
+## 8. Preview / install onto the real Bip Max (verified flow)
 
-1. **Enable Developer Mode (Zepp phone app):**
-   Profile → Settings → About → tap the Zepp logo **7×** until "Developer Mode"
-   appears.
-2. **Open Developer Mode:** Device → General → Developer Mode → **Mini Program**
-   (watchfaces may appear under a **Watch Face** tab — use whichever the Bip Max
-   shows).
-3. **Preview from the Mac:**
+> **Primary path** — the Bip Max simulator model is not published yet, so we
+> develop directly against the real watch. Verified against the Zeus CLI docs.
+> The **phone scans the terminal QR** (the Bip Max has no camera); the Zepp app
+> transfers it to the watch over Bluetooth.
+
+Requirements: watch **paired to the same Zepp account** you log in with, and
+**Bluetooth connected**.
+
+1. **Enable Developer Mode (Zepp phone app, one-time):**
+   Profile → Settings → About → tap the Zepp logo **7×** until it confirms.
+2. **Log in the CLI (one-time):**
    ```bash
-   cd /Users/jtorres/Workspaces/pnb/zepp-apps/watchface
-   zeus preview            # select the real Bip Max → generates a QR code
+   cd /Users/jtorres/Workspaces/pnb/zepp-apps/watchface/bipmax-contours
+   zeus login              # Zepp / Open Platform account (may open a browser)
    ```
-4. On the watch/phone, tap **+ → Scan** and scan the QR to sideload the preview
-   onto the watch. Set it as the active watchface.
-5. Iterate: tweak widgets / re-render the PNG → `zeus preview` again.
+3. **Build a preview + QR:**
+   ```bash
+   zeus preview            # choose target: 432x514-amazfit-bip-max
+   ```
+   A QR code prints in the terminal.
+4. **Scan from the Zepp app:** Profile → (Bound Devices, scroll to bottom) →
+   **Developer Mode → Scan** → point the phone at the terminal QR. It installs to
+   the watch over BT. Set it as the active watchface.
+5. **Iterate:** edit `watchface/index.js` (or swap the background PNG) →
+   `zeus preview` again → re-scan.
 
-**For personal, permanent install (no store):** `zeus build` → `.zab` in `dist/`.
-Sideload/preview is enough for personal use; the Zepp App Store submission is
-only needed for public distribution and is optional here.
+**Simulator path (when a Bip Max — or proxy — model is available):** start the
+Zepp OS Simulator, download a device model in its Device Simulator download
+manager, open it, then `zeus dev` connects on port 7650 and hot-reloads. The
+simulator has **no built-in devices** and won't connect until a Device Simulator
+is downloaded and open.
+
+**Personal permanent install (no store):** `zeus build` → `.zab` in `dist/`.
+Preview/sideload is enough for personal use; Zepp App Store submission is only
+for public distribution and is optional here.
 
 ---
 
@@ -401,9 +487,10 @@ Still open — verify in the simulator (see the reconcile block at the bottom of
       `onPerMinute` existence.
 - [ ] `FILL_RECT` width update via `prop.MORE {w}` (else battery = text-only).
 - [ ] `WIDGET_DELEGATE` `resume_call` name.
-- [ ] Bip Max emulator downloadable in the Zepp simulator (else dev on nearest
-      rectangular device + `zeus preview` on the real watch).
-- [ ] Bip Max accepts developer-preview watchfaces (confirm on the physical watch).
+- [x] Bip Max emulator in the Zepp simulator → **not published yet**. Decision:
+      develop against the **real watch** via `zeus preview` (§8).
+- [ ] Bip Max accepts developer-preview watchfaces (confirm on the physical watch
+      during the first `zeus preview`).
 - [ ] Decide baked-vs-widget for the day/date circle (baking recommended).
 
 ## 11. Source references
