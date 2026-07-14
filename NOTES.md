@@ -168,6 +168,26 @@ coding matters a lot.
   Two `TEXT` widgets (orange HH right-justified to center + white `:MM` left) give
   the two-color clock. Update with `widget.setProperty(prop.MORE, { text })`. ✅
 - **Static widgets**: `TEXT`, `FILL_RECT`, `CIRCLE`, `ARC` all render. ✅
+- **Steps** via `@zos/sensor` `Step`: `new Step()` + `getCurrent()` + `onChange()`.
+  ✅ — but ONLY after declaring the permission **`data:user.hd.step`** in
+  `app.json` (see below). Renders a live count. No permission prompt appeared on
+  device; declaring it in `app.json` was enough for the preview build.
+- **Day / date** via standard JS **`new Date()`** — `getDay()` (0=Sun weekday)
+  and `getDate()` (day of month). ✅ Confirmed working on-device (JS Date is
+  available on Zepp OS; the official 3.0 alarm sample uses it). No sensor, no
+  permission needed — preferred over the `@zos/sensor` Time date getters.
+- **Circle + ring**: `widget.CIRCLE` (`center_x, center_y, radius, color`) + a
+  full `widget.ARC` (`x, y, w, h, start_angle:0, end_angle:360, line_width,
+  color`) render correctly as the top-right day/date badge. ✅
+
+### Permissions
+- Health-data sensors need an explicit permission string in `app.json`
+  `"permissions"`. The exact strings (from the official showcase app) are
+  `data:user.hd.step`, `data:user.hd.heart_rate`, `data:user.hd.calorie`,
+  `data:user.hd.distance`, `data:user.hd.spo2`, `data:user.hd.sleep`,
+  `data:user.hd.stand`, `data:user.hd.stress`, `data:user.hd.pai`,
+  `data:user.hd.fat_burning`, plus `data:os.device.info`. We currently declare
+  **`data:user.hd.step`**. Add more here as we wire up new data.
 
 ### What does NOT work (and the black-screen traps)
 - ❌ **OS replacement tags** (`[HOUR_24_Z]`, `[MIN_Z]`, `[SC]`, `[BATTERY]`, …)
@@ -185,12 +205,12 @@ coding matters a lot.
   was wrapped in `try/catch`, so its silent failure just left the time frozen
   after the initial paint — misleading. Lesson: guards hide failures; prefer the
   approach that actually works.
-- ⚠️ **`@zos/sensor` `Step`** (`new Step()`, `getCurrent()`, `onChange()`) is
-  valid in APP samples but **threw at runtime in the watchface** (black-screened
-  build #2 before it was guarded). Strong suspicion: **missing permission** in
-  `app.json` (`"permissions": []` currently). Step access is now fully wrapped in
-  `try/catch` so it can't blank the face; the count sits at `0` until the
-  permission is added. **NEXT FIX: add the step-data permission to `app.json`.**
+- ✅ **RESOLVED — `@zos/sensor` `Step`**: black-screened build #2 because
+  `"permissions": []` had no step permission, so `new Step()` threw. Fixed by
+  adding **`data:user.hd.step`** to `app.json`. Still kept fully wrapped in
+  `try/catch` as defense. Steps now show a live count. (Left here as the record of
+  the trap: a sensor that works in APP samples can still throw in a watchface if
+  its permission isn't declared.)
 
 ### Rules of thumb going forward
 1. Add one element per `zeus preview`, verify on-device, then the next.
@@ -349,12 +369,13 @@ sensor and set text yourself — **tags do not work in code**.
 2. **Time**: two `TEXT` widgets — orange HH (right→center) + white `:MM`
    (center→right). Read `@zos/sensor` `Time.getHours()/getMinutes()`; redraw with
    **`setInterval(draw, 1000)`** (NOT `onPerMinute` — it didn't tick). ✅ DONE
-3. **Steps**: orange "S" `TEXT` + grey count `TEXT`. `@zos/sensor` `Step` is
-   wrapped in `try/catch`. ⚠️ Currently shows `0` — **needs a step permission in
-   `app.json`** (next fix).
-4. **Day/Date circle**: `CIRCLE` + `ARC` ring + weekday `TEXT` (orange) + date
-   `TEXT` (white), from `Time` (weekday/date getters TBD — verify method names).
-   ⏳ NOT STARTED. Consider baking the ring into the PNG.
+3. **Steps**: orange "S" `TEXT` + count `TEXT`. `@zos/sensor` `Step` (guarded).
+   ✅ DONE — required `data:user.hd.step` permission in `app.json`. TODO: restore
+   final styling (currently diagnostic bright-white; Garmin used grey `0xAAAAAA`,
+   but verify contrast over terrain).
+4. **Day/Date circle**: `CIRCLE` + full `ARC` ring + weekday `TEXT` (orange) +
+   date `TEXT` (white), driven by JS **`new Date()`** (`getDay()`/`getDate()`).
+   ✅ DONE. (Could still bake the ring into the PNG later to save widgets.)
 5. **Battery**: colored level + `%`. ❌ `@zos/sensor` Battery does not exist —
    API still TBD (`data_type.BATTERY` widget or `@zos/device`). ⏳ DEFERRED.
 6. **AOD layer** in `app.json`: dim time-only variant. ⏳ NOT STARTED.
