@@ -34,11 +34,13 @@ const CSPLIT    = 208 + TIME_XOFF  // colon center: HH right-aligns here, :MM le
 const TIME_FT   = 'raw/anton.ttf'
 
 // Other layout
-const STEPS_X    = 30
-const STEPS_Y    = 44
-const STEPS_FONT = 42          // bumped up from 30
-const STEPS_H    = 46
-const STEPS_GAP  = 44          // x gap from "S" to the number (scales with font)
+const STEPS_X     = 30
+const STEPS_Y     = 32
+const STEPS_ICON  = 52         // steps icon (symbols font) size
+const STEPS_FONT  = 64         // count now uses TIME font (Anton) — bigger
+const STEPS_H     = 72
+const STEPS_GAP   = 66         // x gap from icon to number (scales with font)
+const STEPS_GLYPH = ''   // fa-shoe_prints (two prints)
 const CIRC_X  = DW - 84
 const CIRC_Y  = 92
 const CIRC_R  = 54
@@ -125,16 +127,17 @@ WatchFace({
     drawTime()
     try { setInterval(() => { drawTime(); drawDate() }, 1000) } catch (e) {}
 
-    // --- STEPS (diagnostic white for now) --------------------------------
+    // --- STEPS: shoe-prints icon + bold count ----
+    // Icon from symbols font (U+EE14), count in Anton time font (bold).
     createWidget(widget.TEXT, {
-      x: STEPS_X, y: STEPS_Y, w: 40, h: STEPS_H,
-      color: ORANGE, text_size: STEPS_FONT,
+      x: STEPS_X, y: STEPS_Y, w: 50, h: STEPS_H,
+      color: ORANGE, text_size: STEPS_ICON, font: 'raw/symbols.ttf',
       align_h: align.LEFT, align_v: align.CENTER_V,
-      text_style: text_style.NONE, text: 'S',
+      text_style: text_style.NONE, text: STEPS_GLYPH,
     })
     const stepsText = createWidget(widget.TEXT, {
-      x: STEPS_X + STEPS_GAP, y: STEPS_Y, w: 260, h: STEPS_H,
-      color: WHITE, text_size: STEPS_FONT,
+      x: STEPS_X + STEPS_GAP, y: STEPS_Y, w: 300, h: STEPS_H,
+      color: WHITE, text_size: STEPS_FONT, font: TIME_FT,
       align_h: align.LEFT, align_v: align.CENTER_V,
       text_style: text_style.NONE, text: '0',
     })
