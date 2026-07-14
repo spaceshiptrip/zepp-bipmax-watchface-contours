@@ -163,21 +163,14 @@ WatchFace({
       try { step.onChange(drawSteps) } catch (e) {}
     } catch (e) {}
 
-    // --- BATTERY: icon + colored % (bottom-center) -----------------------
-    // Battery icon uses the symbols (Nerd) font; glyph reflects charge level.
+    // --- BATTERY: lightning PNG icon + colored % (bottom-center) ---------
+    // Icon is a 34x34 transparent PNG (lightning.png) via IMG — font glyphs
+    // box on this device (NOTES §3d), so we use the guaranteed IMG path.
+    // Icon is static; the % text still color-codes green/yellow/red.
     const BATT_ICON_X = 150
     const BATT_PCT_X  = 194
-    const battGlyph = (p) =>
-      p >= 88 ? '' :   // fa-battery_full
-      p >= 63 ? '' :   // fa-battery_three_quarters
-      p >= 38 ? '' :   // fa-battery_half
-      p >= 13 ? '' :   // fa-battery_quarter
-                ''     // fa-battery_empty
-    const battIcon = boldIcon({
-      x: BATT_ICON_X, y: BATT_Y, w: 40, h: 36,
-      color: WHITE, text_size: 30, font: 'raw/symbols.ttf',
-      align_h: align.CENTER_H, align_v: align.CENTER_V,
-      text: '',
+    createWidget(widget.IMG, {
+      x: BATT_ICON_X, y: BATT_Y + 1, src: 'lightning.png',
     })
     const battText = createWidget(widget.TEXT, {
       x: BATT_PCT_X, y: BATT_Y, w: 120, h: 36,
@@ -192,7 +185,6 @@ WatchFace({
           const p = battery.getCurrent()
           const c = p <= 20 ? BATT_LOW : (p <= 50 ? BATT_MID : BATT_OK)
           battText.setProperty(prop.MORE, { text: p + '%', color: c })
-          battIcon.set({ text: battGlyph(p), color: c })
         } catch (e) {}
       }
       drawBatt()
