@@ -12,7 +12,7 @@
     "vender": "jtorres",
     "description": "Topographic contour + hillshade watchface"
   },
-  "permissions": [],
+  "permissions": ["data:user.hd.step"],
   "runtime": {
     "apiVersion": {
       "compatible": "2.0.0",
