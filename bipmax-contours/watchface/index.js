@@ -141,13 +141,12 @@ WatchFace({
     drawTime()
     try { setInterval(() => { drawTime(); drawDate() }, 1000) } catch (e) {}
 
-    // --- STEPS: footprint icon (black) + bold count ----
-    // Icon from symbols font (U+E241 footprint, proven range), count in Anton time font (bold).
-    createWidget(widget.TEXT, {
-      x: STEPS_X, y: STEPS_Y, w: 50, h: STEPS_H,
-      color: 0x000000, text_size: STEPS_ICON, font: 'raw/symbols.ttf',
-      align_h: align.LEFT, align_v: align.CENTER_V,
-      text_style: text_style.NONE, text: '\ue241',   // fae-footprint, inlined escape (matches working weather pattern)
+    // --- STEPS: shoe-prints PNG icon + bold count ----
+    // Icon is a 56x56 transparent PNG (assets/<device>/shoeprint.png) via IMG \u2014
+    // the guaranteed-render path (NOTES \u00a73d Mitigation B). widget.IMG draws at the
+    // PNG's native size, so it's pre-sized to 56px. y nudged to center with count.
+    createWidget(widget.IMG, {
+      x: STEPS_X, y: STEPS_Y + 8, src: 'shoeprint.png',
     })
     const stepsText = createWidget(widget.TEXT, {
       x: STEPS_X + STEPS_GAP, y: STEPS_Y, w: 300, h: STEPS_H,
