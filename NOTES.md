@@ -278,6 +278,76 @@ coding matters a lot.
   the trap: a sensor that works in APP samples can still throw in a watchface if
   its permission isn't declared.)
 
+### ⬛ Symbol glyphs render as BLACK RECTANGLES — the font-subset trap (HARD-WON)
+
+**Symptom.** A `TEXT` widget with `font: 'raw/symbols.ttf'` shows a solid
+**black/□ rectangle** (the font's `.notdef` "missing glyph" box) instead of the
+icon — even though the icon is clearly a valid glyph.
+
+**What it is NOT (ruled out by inspection):**
+- **NOT a missing glyph.** Verified with `fontTools`: every glyph we tried has
+  real outlines in the bundled file — `weather-day_sunny` U+E30D (10 contours,
+  renders), `fae-footprint` U+E241 (2 contours), `fa-battery_full` U+F240
+  (3 contours), `oct-zap` U+26A1 (2 contours). The shapes are all present.
+- **NOT the codepoint range.** We *thought* "only U+E3xx renders" — WRONG. U+E241
+  renders fine once referenced correctly (see below). Range was a red herring.
+- **NOT the font file / font size.** Same 2.4 MB `symbols.ttf` renders the weather
+  glyph perfectly. A different or single-glyph TTF would not have helped.
+
+**The actual root cause: build-time font subsetting.** `zeus`/`zpm` subsets the
+bundled TTF at build to only the glyphs it can find used **as inline string
+literals in the source**. A glyph referenced any *other* way is dropped from the
+subset → `.notdef` box on device. Concretely, from our own code:
+
+| How the glyph is written | Bundled? | Result |
+|---|---|---|
+| `text: '\ue30d'` — inline **escape literal** in the widget | ✅ yes | renders (weather) |
+| `text: STEPS_GLYPH` — **variable** holding a raw char | ❌ no | ⬛ box (old steps) |
+| `battIcon.set({ text: battGlyph(p) })` — **function return / dynamic** | ❌ no | ⬛ box (battery) |
+
+So the weather icon worked because it was a literal `'\ue30d'`; the steps icon
+boxed because it went through a `const STEPS_GLYPH = '…'` variable; the battery
+icon still boxes because its glyph comes from `battGlyph()` set dynamically.
+
+**Mitigation A — write the glyph as an inline `\uXXXX` escape literal (preferred).**
+Put the escape **directly** in the widget's `text:` (or `setProperty`) call, not
+behind a variable and not as a raw multibyte character:
+```js
+// ✅ bundled + renders
+createWidget(widget.TEXT, { font: 'raw/symbols.ttf', text: '', … })
+// ❌ boxes — variable indirection, glyph not seen by the subsetter
+const G = ''; createWidget(widget.TEXT, { …, text: G })
+```
+Always use the `'\uXXXX'` **escape** form, never a pasted raw glyph character
+(raw bytes are also not reliably detected, and get mangled by edits).
+
+**Mitigation A2 — dynamic sets (battery, live weather code).** When the glyph must
+change at runtime (battery level, weather condition), the subsetter still needs to
+*see* every possible glyph as an inline literal somewhere in the source. Options:
+(a) make sure each candidate glyph appears as an inline `'\uXXXX'` literal in a
+branch the compiler keeps (a `switch`/ternary that returns literals is fine **only
+if** the subsetter scans function bodies — UNVERIFIED here; the battery `battGlyph`
+ternary boxed, so function-body literals may NOT be scanned); (b) safest: seed a
+hidden/off-screen `TEXT` per candidate glyph as an inline literal so each is
+forced into the subset, then reuse; or (c) go the PNG route below.
+
+**Mitigation B — PNG image icon (the guaranteed fallback).** `widget.IMG` always
+renders (that's how the full-bleed background works), and it's actually **lighter
+at runtime** than a font glyph (a small icon → tiny TGA → simple blit; no glyph
+rasterization). Use this whenever the font route fights back:
+1. Make a small transparent PNG (~52 px, black art on alpha) — e.g. shoe-prints.
+2. Drop it in `assets/432x514-amazfit-bip-max/` (bundled + `PNG2TGA` at build,
+   same as `contour_background.png`).
+3. Swap the `TEXT` icon for `createWidget(widget.IMG, { x, y, src: 'steps.png' })`.
+   Native size = the PNG's pixel size (basic IMG doesn't scale), so export at the
+   display size you want. Transparency (alpha) is preserved through TGA.
+Trade-off: one more asset file to manage vs. a guaranteed render. Overhead worry
+is unfounded — IMG is cheap; the 2.4 MB font already dwarfs any icon PNG.
+
+**Status:** steps footprint ✅ fixed via Mitigation A (inline `''`). Battery
+icon ⬛ still boxes — apply A2 or B next (candidate charging glyph: `oct-zap` ⚡
+U+26A1). See §9.3 / §9.7.
+
 ### Rules of thumb going forward
 1. Add one element per `zeus preview`, verify on-device, then the next.
 2. Wrap every sensor construction + read in `try/catch`; create the UI widget
