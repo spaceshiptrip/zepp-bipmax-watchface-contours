@@ -11,6 +11,42 @@ watchface only.
 
 ---
 
+## 0. CURRENT STATUS (snapshot)
+
+**Project:** `bipmax-contours/` (git root is `watchface/`). Scaffolded with
+`zeus create` — API Level **2.0**, watchface type, platform **Amazfit Bip Max**.
+
+**Confirmed device facts:** Bip Max = **432 × 514** rectangular AMOLED,
+`deviceSource` **11206915** (codename **PikeW**), `designWidth` **432**,
+`configVersion` **v2**, apiVersion **2.0.0**, local `appId` **23492**. Asset
+folder: `assets/432x514-amazfit-bip-max/`.
+
+**Working on the real watch (verified via `zeus preview`):**
+- ✅ **Background** — reused Garmin `shaded` dark contour art, reshaped to
+  432×514, full-bleed (`widget.IMG`). *(Known issue: rounded top/bottom from the
+  round source — fix = Python re-render, §9.1.)*
+- ✅ **Time** — big, bold, orange `HH` : white `:MM`. Custom **Anton** font
+  (`raw/anton.ttf`), ~210px, single draw. `@zos/sensor` `Time` +
+  `setInterval` tick. Position tuned via `TIME_XOFF`.
+- ✅ **Steps** — orange `S` + count, top-left. `@zos/sensor` `Step`. Needed the
+  **`data:user.hd.step`** permission in `app.json`. *(Still diagnostic white —
+  final styling pending, §9.4.)*
+- ✅ **Day/Date circle** — top-right dark disc + orange ring + weekday (orange)
+  over date (white), from JS `new Date()`.
+- ✅ **Battery** — colored `%` bottom-center (green/yellow/red). `@zos/sensor`
+  `Battery`. *(Bar-graph + days-remaining pending, §9.3.)*
+
+**How it's built:** all foreground is code (`watchface/index.js`) reading sensors
+and setting text — NOT the GUI Watchface Maker. Everything wrapped in `try/catch`
+so a failing sensor can't black-screen the face. Full engineering learnings and
+traps in **§3d**; per-element status in **§6**; backlog (background re-render,
+battery bar, weather, polish) in **§9**.
+
+**Toolchain:** Zeus CLI (`npm i @zeppos/zeus-cli -g`). No Bip Max simulator model
+yet → we develop against the **real watch** via `zeus preview` + QR (§8).
+
+---
+
 ## 1. What the Garmin watchface actually is (the thing we are cloning)
 
 Source: `/Users/jtorres/Workspaces/pnb/garmin/garmin-simple-watchface-contours`,
@@ -183,6 +219,15 @@ coding matters a lot.
   (returns 0–100) + `onChange()`. ✅ No permission needed. `setProperty(prop.MORE,
   { text, color })` successfully updates BOTH text and color, so the level colors
   (green/yellow/red) work.
+- **Custom bold font** ✅ — the TEXT widget accepts a **`font:` property** pointing
+  to a bundled `.ttf` (confirmed in the 2.0 showcase: `font: 'raw/custom.ttf'`).
+  We bundled **Anton** (OFL, ultra-bold condensed) at
+  `assets/<device>/raw/anton.ttf` and set `font: 'raw/anton.ttf'` on the time.
+  This is the RIGHT way to get big/bold numbers — **single draw**, no multi-pass.
+  Condensed glyphs also fit more width, so the time can go larger (~210px).
+  NOTE: earlier "bold via multi-draw offset copies" was a stopgap and is now
+  removed — don't reintroduce it; use a font (or `TEXT_IMG`/`IMG_TIME` digit
+  images) instead.
 
 ### Permissions
 - Health-data sensors need an explicit permission string in `app.json`
@@ -373,8 +418,10 @@ sensor and set text yourself — **tags do not work in code**.
 
 1. **Solid `FILL_RECT` backdrop** (diagnostic) + **background `IMG`** — first. ✅
 2. **Time**: two `TEXT` widgets — orange HH (right→center) + white `:MM`
-   (center→right). Read `@zos/sensor` `Time.getHours()/getMinutes()`; redraw with
-   **`setInterval(draw, 1000)`** (NOT `onPerMinute` — it didn't tick). ✅ DONE
+   (center→right), **Anton bold font** (`font:'raw/anton.ttf'`), ~210px, single
+   draw. Read `@zos/sensor` `Time.getHours()/getMinutes()`; redraw with
+   **`setInterval(draw, 1000)`** (NOT `onPerMinute` — it didn't tick). Fine-tune
+   horizontal position with `TIME_XOFF` in index.js. ✅ DONE + styled.
 3. **Steps**: orange "S" `TEXT` + count `TEXT`. `@zos/sensor` `Step` (guarded).
    ✅ DONE — required `data:user.hd.step` permission in `app.json`. TODO: restore
    final styling (currently diagnostic bright-white; Garmin used grey `0xAAAAAA`,

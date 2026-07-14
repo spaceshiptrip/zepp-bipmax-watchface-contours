@@ -1,16 +1,14 @@
 /*
- * Background + time + steps + day/date circle.
+ * Background + time (BIG + BOLD via custom font) + steps + day/date circle + battery.
  *
- * Learnings (see NOTES §3d):
- *  - OS replacement tags don't work in code watchfaces — read data + set text.
- *  - onPerMinute didn't tick → use setInterval.
- *  - @zos/sensor Battery doesn't exist; Step needs "data:user.hd.step" perm.
- *  - Standard JS `new Date()` WORKS on-device (used in official samples) →
- *    used here for weekday + day-of-month (no sensor / permission needed).
+ * Bold done RIGHT: a bundled ultra-bold condensed TTF (Anton, OFL) set via the
+ * TEXT `font:` property — single draw, no multi-pass. Condensed glyphs let the
+ * numbers go bigger while still fitting the 432px width. Font lives at
+ * assets/<device>/raw/anton.ttf, referenced as 'raw/anton.ttf'.
  *
- * Confirmed widget params:
- *  - CIRCLE: center_x, center_y, radius, color
- *  - ARC:    x, y, w, h, start_angle, end_angle, color, line_width
+ * Learnings (NOTES §3d): tags don't work in code; onPerMinute didn't tick (use
+ * setInterval); Step needs data:user.hd.step; new Date() works; Battery in
+ * @zos/sensor works incl. color updates.
  */
 
 import { createWidget, widget, prop, align, text_style } from '@zos/ui'
@@ -20,24 +18,29 @@ const DW = 432
 const DH = 514
 const CX = DW / 2
 
-const ORANGE = 0xff8800
-const WHITE  = 0xffffff
+const ORANGE  = 0xff8800
+const WHITE   = 0xffffff
 const CIRC_BG = 0x222222
-const BATT_OK  = 0x00cc44  // > 50%
-const BATT_MID = 0xffdd00  // 21–50%
-const BATT_LOW = 0xff3333  // <= 20%
+const BATT_OK  = 0x00cc44
+const BATT_MID = 0xffdd00
+const BATT_LOW = 0xff3333
 
-// Layout
-const TIME_Y    = 200
-const TIME_H    = 140
-const TIME_FONT = 120
-const STEPS_X   = 30
-const STEPS_Y   = 44
-const STEPS_H   = 34
-const CIRC_X    = DW - 84   // top-right circle center
-const CIRC_Y    = 92
-const CIRC_R    = 54
-const BATT_Y    = 452       // battery row (bottom)
+// Time layout
+const TIME_XOFF = -15          // nudge ONLY the time digits (negative = left)
+const TIME_FONT = 210          // Anton is condensed → can go big; tune to hit the edges
+const TIME_Y    = 150
+const TIME_H    = 214
+const CSPLIT    = 208 + TIME_XOFF  // colon center: HH right-aligns here, :MM left-aligns here
+const TIME_FT   = 'raw/anton.ttf'
+
+// Other layout
+const STEPS_X = 30
+const STEPS_Y = 44
+const STEPS_H = 34
+const CIRC_X  = DW - 84
+const CIRC_Y  = 92
+const CIRC_R  = 54
+const BATT_Y  = 452
 
 const DAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
 const pad2 = (n) => (n < 10 ? '0' + n : '' + n)
@@ -77,16 +80,16 @@ WatchFace({
     }
     drawDate()
 
-    // --- TIME: orange HH + white :MM, centered ---------------------------
+    // --- TIME: BIG + BOLD via custom font, orange HH + white :MM ---------
     const hh = createWidget(widget.TEXT, {
-      x: 0, y: TIME_Y, w: CX, h: TIME_H,
-      color: ORANGE, text_size: TIME_FONT,
+      x: CSPLIT - 320, y: TIME_Y, w: 320, h: TIME_H,
+      color: ORANGE, text_size: TIME_FONT, font: TIME_FT,
       align_h: align.RIGHT, align_v: align.CENTER_V,
       text_style: text_style.NONE, text: '00',
     })
     const mm = createWidget(widget.TEXT, {
-      x: CX, y: TIME_Y, w: CX, h: TIME_H,
-      color: WHITE, text_size: TIME_FONT,
+      x: CSPLIT, y: TIME_Y, w: 320, h: TIME_H,
+      color: WHITE, text_size: TIME_FONT, font: TIME_FT,
       align_h: align.LEFT, align_v: align.CENTER_V,
       text_style: text_style.NONE, text: ':00',
     })
