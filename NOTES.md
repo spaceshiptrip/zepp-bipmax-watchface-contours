@@ -45,6 +45,15 @@ battery bar, weather, polish) in **§9**.
 **Toolchain:** Zeus CLI (`npm i @zeppos/zeus-cli -g`). No Bip Max simulator model
 yet → we develop against the **real watch** via `zeus preview` + QR (§8).
 
+> **Node version:** use **Node 22 LTS** (repo pins it via `.nvmrc` → run
+> `nvm use` after `cd`). Confirmed working combo: Node **22.22.2**, npm **10.9.7**,
+> Zeus **1.9.2**, zpm **3.4.2**. Odd/non-LTS Node (e.g. 23.x) installs and mostly
+> runs but is the less-tested path. **nvm gotcha:** global npm packages are
+> per-Node-version — after `nvm use 22` you may need to reinstall the CLI on that
+> version (`npm i @zeppos/zeus-cli -g`). There is **no `package.json`** in this
+> repo; the `@zos/*` modules come from the Zeus runtime at build time, so there is
+> nothing to `npm i` locally (ignore any generic `npm i` step).
+
 ---
 
 ## 1. What the Garmin watchface actually is (the thing we are cloning)
@@ -461,7 +470,8 @@ cp preview/bipmax_contour_dark.png \
 
 # --- B. Watchface project (Zeus CLI) ---
 cd /Users/jtorres/Workspaces/pnb/zepp-apps/watchface
-npm i                       # install deps
+nvm use                     # Node 22 LTS (see .nvmrc / §0)
+# NOTE: no `npm i` — there's no package.json; @zos/* come from the Zeus runtime
 # set app.json: appType watchface, appId, Bip Max platform, designWidth 432
 
 # --- C. Simulator dev loop ---
