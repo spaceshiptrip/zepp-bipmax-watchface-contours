@@ -40,7 +40,6 @@ const STEPS_ICON  = 52         // steps icon (symbols font) size
 const STEPS_FONT  = 64         // count now uses TIME font (Anton) — bigger
 const STEPS_H     = 72
 const STEPS_GAP   = 66         // x gap from icon to number (scales with font)
-const STEPS_GLYPH = '≁'   // fa-shoe_prints (two prints)
 const CIRC_X  = DW - 84
 const CIRC_Y  = 92
 const CIRC_R  = 54
@@ -148,7 +147,7 @@ WatchFace({
       x: STEPS_X, y: STEPS_Y, w: 50, h: STEPS_H,
       color: 0x000000, text_size: STEPS_ICON, font: 'raw/symbols.ttf',
       align_h: align.LEFT, align_v: align.CENTER_V,
-      text_style: text_style.NONE, text: STEPS_GLYPH,
+      text_style: text_style.NONE, text: '\ue241',   // fae-footprint, inlined escape (matches working weather pattern)
     })
     const stepsText = createWidget(widget.TEXT, {
       x: STEPS_X + STEPS_GAP, y: STEPS_Y, w: 300, h: STEPS_H,
