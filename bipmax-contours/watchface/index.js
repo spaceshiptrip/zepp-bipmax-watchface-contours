@@ -35,12 +35,12 @@ const TIME_FT   = 'raw/anton.ttf'
 
 // Other layout
 const STEPS_X     = 30
-const STEPS_Y     = 32
+const STEPS_Y     = 56         // centered vertically with day/date circle (CIRC_Y = 92)
 const STEPS_ICON  = 52         // steps icon (symbols font) size
 const STEPS_FONT  = 64         // count now uses TIME font (Anton) — bigger
 const STEPS_H     = 72
 const STEPS_GAP   = 66         // x gap from icon to number (scales with font)
-const STEPS_GLYPH = ''   // fa-shoe_prints (two prints)
+const STEPS_GLYPH = ''   // fa-shoe_prints (two prints)
 const CIRC_X  = DW - 84
 const CIRC_Y  = 92
 const CIRC_R  = 54
@@ -128,7 +128,7 @@ WatchFace({
     try { setInterval(() => { drawTime(); drawDate() }, 1000) } catch (e) {}
 
     // --- STEPS: shoe-prints icon + bold count ----
-    // Icon from symbols font (U+EE14), count in Anton time font (bold).
+    // Icon from symbols font (U+E241 footprint, proven range), count in Anton time font (bold).
     createWidget(widget.TEXT, {
       x: STEPS_X, y: STEPS_Y, w: 50, h: STEPS_H,
       color: ORANGE, text_size: STEPS_ICON, font: 'raw/symbols.ttf',
