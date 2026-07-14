@@ -14,7 +14,7 @@
  */
 
 import { createWidget, widget, prop, align, text_style } from '@zos/ui'
-import { Time, Step } from '@zos/sensor'
+import { Time, Step, Battery } from '@zos/sensor'
 
 const DW = 432
 const DH = 514
@@ -23,6 +23,9 @@ const CX = DW / 2
 const ORANGE = 0xff8800
 const WHITE  = 0xffffff
 const CIRC_BG = 0x222222
+const BATT_OK  = 0x00cc44  // > 50%
+const BATT_MID = 0xffdd00  // 21–50%
+const BATT_LOW = 0xff3333  // <= 20%
 
 // Layout
 const TIME_Y    = 200
@@ -34,6 +37,7 @@ const STEPS_H   = 34
 const CIRC_X    = DW - 84   // top-right circle center
 const CIRC_Y    = 92
 const CIRC_R    = 54
+const BATT_Y    = 452       // battery row (bottom)
 
 const DAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
 const pad2 = (n) => (n < 10 ? '0' + n : '' + n)
@@ -114,6 +118,26 @@ WatchFace({
       }
       drawSteps()
       try { step.onChange(drawSteps) } catch (e) {}
+    } catch (e) {}
+
+    // --- BATTERY: colored % (bottom-center) ------------------------------
+    const battText = createWidget(widget.TEXT, {
+      x: 0, y: BATT_Y, w: DW, h: 36,
+      color: WHITE, text_size: 30,
+      align_h: align.CENTER_H, align_v: align.CENTER_V,
+      text_style: text_style.NONE, text: '--%',
+    })
+    try {
+      const battery = new Battery()
+      const drawBatt = () => {
+        try {
+          const p = battery.getCurrent()
+          const c = p <= 20 ? BATT_LOW : (p <= 50 ? BATT_MID : BATT_OK)
+          battText.setProperty(prop.MORE, { text: p + '%', color: c })
+        } catch (e) {}
+      }
+      drawBatt()
+      try { battery.onChange(drawBatt) } catch (e) {}
     } catch (e) {}
   },
 

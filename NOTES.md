@@ -179,6 +179,10 @@ coding matters a lot.
 - **Circle + ring**: `widget.CIRCLE` (`center_x, center_y, radius, color`) + a
   full `widget.ARC` (`x, y, w, h, start_angle:0, end_angle:360, line_width,
   color`) render correctly as the top-right day/date badge. ✅
+- **Battery** via `@zos/sensor` `Battery`: `new Battery()` + `getCurrent()`
+  (returns 0–100) + `onChange()`. ✅ No permission needed. `setProperty(prop.MORE,
+  { text, color })` successfully updates BOTH text and color, so the level colors
+  (green/yellow/red) work.
 
 ### Permissions
 - Health-data sensors need an explicit permission string in `app.json`
@@ -195,10 +199,12 @@ coding matters a lot.
   render as **literal text** — they are NOT substituted. → In code you must read
   the sensor and set the text yourself. (This wasted a build: the face showed a
   literal `[HOUR...` string.)
-- ❌ **`import { Battery } from '@zos/sensor'`** — that export **does not exist**.
-  Importing it black-screened build #1. Battery is read a different way (still
-  TBD — likely a `data_type.BATTERY` widget or a `@zos/device` call; **not** a
-  sensor class). Battery is currently **deferred**.
+- ✅ **CORRECTION — `@zos/sensor` `Battery` DOES exist** and works
+  (`new Battery()`, `getCurrent()`, `onChange()`). My earlier assumption that it
+  caused build #1's black screen was **wrong** — build #1 actually crashed on the
+  unpermissioned `Step` sensor (both were in that build). Battery needs no
+  permission. Lesson: when several risky calls are in one build, don't assume
+  which one threw — bisect.
 - ❌ **`time.onPerMinute(cb)`** — exists in the API but **did not tick** the time
   on this Bip Max firmware. Replaced with **`setInterval(drawTime, 1000)`**, which
   works (polls each second; ~1s lag on minute rollover is expected). `onPerMinute`
@@ -376,9 +382,18 @@ sensor and set text yourself — **tags do not work in code**.
 4. **Day/Date circle**: `CIRCLE` + full `ARC` ring + weekday `TEXT` (orange) +
    date `TEXT` (white), driven by JS **`new Date()`** (`getDay()`/`getDate()`).
    ✅ DONE. (Could still bake the ring into the PNG later to save widgets.)
-5. **Battery**: colored level + `%`. ❌ `@zos/sensor` Battery does not exist —
-   API still TBD (`data_type.BATTERY` widget or `@zos/device`). ⏳ DEFERRED.
+5. **Battery**: colored `%` (green/yellow/red) via `@zos/sensor` `Battery`
+   (guarded). ✅ DONE. TODO: add a battery-shaped bar graph + optional
+   time-remaining in days (see §9).
 6. **AOD layer** in `app.json`: dim time-only variant. ⏳ NOT STARTED.
+
+**GUI tag table (reference only — NOT usable in code):** the Watchface Maker GUI
+exposes replacement tags that do NOT substitute in a code watchface. For the
+record, the useful ones are: `[BATT_PER]` battery %, `[SC]` steps, `[HR]`/`[HR_Z]`
+heart rate, `[CAL]` calories, `[YEAR]`/`[MON(_Z)]`/`[DAY(_Z)]` date,
+`[HOUR_24(_Z)]`/`[MIN(_Z)]`/`[SEC(_Z)]` time, `[WEEK_EN_F]` full weekday
+(Wednesday) / `[WEEK_EN_S]` abbreviated (Wed). In code we get the same data from
+`@zos/sensor` + `new Date()`.
 
 Match the palette from §1. Zepp text has no built-in outline (unlike the Garmin
 `drawOutlined*` helpers); where text sits over busy terrain, either bake a faint
@@ -479,9 +494,12 @@ sips -Z 580 watchface/assets/contour_background.png     # zoom in (was 514)
 sips -c 514 432 watchface/assets/contour_background.png # center-crop to 432×514
 ```
 
-Alternative if zoom crops too much interesting terrain: go back to Python
-(NOTES §4b) and render a native 432×514 rectangle with no `--circle-mask` — that
-gives a true flat-edged background instead of cropping a circle.
+**DECISION (from on-device testing): re-render via Python instead.** The reshape
+approach left a **rounded top/bottom** (leftover from the round Garmin art) that
+looks wrong on the flat rectangular screen. The chosen fix is to run the Python
+renderer through a **venv** and output a **native 432×514 rectangle** with no
+`--circle-mask` — a true flat-edged background. See §4b for the venv setup and
+render commands; goal size is exactly **432 × 514**, no crop, no rounded corners.
 
 ### 9.2 Weather widget
 
@@ -491,6 +509,30 @@ require a `permissions` entry in `app.json` and possibly an app-side script to
 fetch/forward data. Decide placement then (candidate: a second small circle or a
 row opposite the day/date circle). Confirm the exact weather API + permission for
 the Bip Max's Zepp OS version when we build it.
+
+### 9.3 Battery visual + time-remaining
+
+- **Battery-shaped bar graph**: draw a battery icon (rounded `FILL_RECT` body +
+  a small nub) with an inner fill `FILL_RECT` whose **width scales with the
+  percentage** and recolors green/yellow/red. Update the fill width in the
+  `Battery.onChange`/tick handler. (Confirm `FILL_RECT` width is updatable via
+  `setProperty(prop.MORE, { w })`; if not, recreate the fill or use a
+  `data_type.BATTERY` `IMG_LEVEL` widget with battery-frame images.)
+- **Battery → days remaining**: if Zepp exposes an estimated-runtime API, show
+  "~N days". RESEARCH NEEDED — there may be no direct API; fallback is to
+  estimate from percentage and a known drain rate, or skip if unavailable.
+
+### 9.4 Polish pass (numbers must POP)
+
+Make the foreground readouts stand out over the busy terrain:
+- Steps currently uses diagnostic **white**; pick final colors and make the
+  numbers larger / higher-contrast so they "pop."
+- Zepp `TEXT` has no built-in outline (unlike Garmin `drawOutlined*`). To pop
+  over terrain: bake a faint dark plate into the PNG under each text zone, OR put
+  a semi-transparent dark `FILL_RECT`/rounded pill behind the number, OR add a
+  manual 1px offset "shadow" by drawing the text twice (dark behind, color on
+  top). Apply to time, steps, date, battery.
+- Revisit font sizes/positions once the new 432×514 background (§9.1) is in.
 
 ---
 
