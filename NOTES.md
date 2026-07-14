@@ -237,6 +237,12 @@ coding matters a lot.
   NOTE: earlier "bold via multi-draw offset copies" was a stopgap and is now
   removed — don't reintroduce it; use a font (or `TEXT_IMG`/`IMG_TIME` digit
   images) instead.
+  **EXCEPTION — symbol icons:** the Symbols Nerd Font (`raw/symbols.ttf`) ships
+  **Regular-only**, so the weather + battery icons have **no bold font** to switch
+  to. Those use a small `boldIcon()` helper (light 1px 4-neighbour overdraw) in
+  `index.js`. This is the *sanctioned* use of overdraw — **glyphs with no bold
+  font only**. Never overdraw text that has a bold TTF (the time uses Anton). If
+  the 1px overdraw looks muddy on-device, drop to a 2-copy offset or bump size.
 
 ### Permissions
 - Health-data sensors need an explicit permission string in `app.json`
@@ -656,6 +662,14 @@ escape caveat if we pick an `md-*` option instead.
 
 ### 9.3 Battery visual + time-remaining
 
+**Current (in `index.js`):** bottom-center row = **battery icon + colored `%`**,
+sitting just below the weather row (both anchored at `x:150`). The icon is a
+Nerd-Font `fa-battery_*` glyph (`\uf240`–`\uf244` in `symbols.ttf`) chosen by
+level, recolored green/yellow/red along with the text. ⚠️ These **U+F24x** glyphs
+are **UNVERIFIED on-device** — only the U+E3xx weather glyphs are confirmed so far
+(§9.2). Check the next `zeus preview`; if the icon is blank, the font lacks that
+range → fall back to the FILL_RECT battery below, or pick a confirmed glyph range.
+
 - **Battery-shaped bar graph**: draw a battery icon (rounded `FILL_RECT` body +
   a small nub) with an inner fill `FILL_RECT` whose **width scales with the
   percentage** and recolors green/yellow/red. Update the fill width in the
@@ -677,6 +691,37 @@ Make the foreground readouts stand out over the busy terrain:
   manual 1px offset "shadow" by drawing the text twice (dark behind, color on
   top). Apply to time, steps, date, battery.
 - Revisit font sizes/positions once the new 432×514 background (§9.1) is in.
+
+### 9.7 Interactive complications (clickable) + charging state
+
+Make the foreground complications **tappable**, so each opens the matching
+built-in app on the watch. Zepp exposes widget clicks via a click callback
+(`click_func` / `CLICK_UP`) on the widget; confirm the exact API **and** how to
+launch a *system* app from a **watchface** (watchfaces are more sandboxed than
+apps — may need `@zos/router` `push`, an app-service hop, or a dedicated launch
+API). Targets requested:
+
+- **Weather** icon/temp → open the watch **weather** app.
+- **Battery `%`** → open the watch **battery / power** info screen.
+- **Steps** → open the current **workout / activity** screen.
+- **Date** circle → open the **calendar**.
+
+**Charging state (drives the battery icon choice):** detect whether the watch is
+**charging** and swap the battery glyph to a charging variant (e.g. a
+charging-bolt battery — candidates: `nf-md-battery_charging_*`, which live in the
+**supplementary plane** so they need the `\u{...}` escape per the §9.2 BMP caveat,
+not plain `\uXXXX`). RESEARCH NEEDED — confirm the Zepp charge-state API
+(candidate: `@zos/sensor` `Battery` may expose a charging flag/state, or there's a
+separate power/charger API). Until confirmed, the icon reflects **level only**
+(§9.3, `fa-battery_*`).
+
+All of the above are **later development** — not v1.
+
+> **Weather-icon assets note:** `resources/weather-icons-master/` (Erik Flowers'
+> Weather Icons) is the **same `wi-*` set already embedded in `symbols.ttf`** as
+> the `nf-weather-*` glyphs (§9.2) — no need to bundle its font separately. Its
+> `svg/` files are useful only if we later want to **bake** a custom weather icon
+> into the background PNG.
 
 ---
 

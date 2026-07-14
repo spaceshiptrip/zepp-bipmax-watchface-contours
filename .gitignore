@@ -1,0 +1,9 @@
+# macOS
+.DS_Store
+
+# Third-party reference dump: weather-icons (erikflowers). Everything here is
+# redundant with the bundled raw/symbols.ttf (NOTES §9.2). Keep ONLY the source
+# SVGs, which are the one part with future value — baking a custom weather icon
+# into the background PNG (NOTES §9.7). Ignore the ~12MB of fonts/css/docs/build.
+resources/weather-icons-master/*
+!resources/weather-icons-master/svg/

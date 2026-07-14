@@ -42,10 +42,32 @@ const STEPS_GAP  = 44          // x gap from "S" to the number (scales with font
 const CIRC_X  = DW - 84
 const CIRC_Y  = 92
 const CIRC_R  = 54
-const BATT_Y  = 452
+const BATT_Y     = 452
+const WEATHER_Y  = 400         // weather row sits just above the battery
 
 const DAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
 const pad2 = (n) => (n < 10 ? '0' + n : '' + n)
+
+// Faux-bold for symbol-font glyphs. The Symbols Nerd Font is Regular-only (no
+// bold variant — unlike the time, which uses the real bold Anton TTF, NOTES §3d),
+// so the only way to add weight to an icon glyph is a light 1px overdraw. This is
+// the SANCTIONED use of overdraw: glyphs with no bold font only (weather, battery)
+// — never for text that has a bold TTF. `.set(props)` updates every layer at once.
+const BOLD_OFFS = [[-1, 0], [1, 0], [0, -1], [0, 1], [0, 0]]
+const boldIcon = (base) => {
+  const layers = []
+  for (let i = 0; i < BOLD_OFFS.length; i++) {
+    layers.push(createWidget(widget.TEXT, {
+      x: base.x + BOLD_OFFS[i][0], y: base.y + BOLD_OFFS[i][1], w: base.w, h: base.h,
+      color: base.color, text_size: base.text_size, font: base.font,
+      align_h: base.align_h, align_v: base.align_v,
+      text_style: text_style.NONE, text: base.text,
+    }))
+  }
+  return {
+    set: (props) => { for (let i = 0; i < layers.length; i++) layers[i].setProperty(prop.MORE, props) },
+  }
+}
 
 WatchFace({
   build() {
@@ -125,11 +147,30 @@ WatchFace({
       try { step.onChange(drawSteps) } catch (e) {}
     } catch (e) {}
 
-    // --- BATTERY: colored % (bottom-center) ------------------------------
-    const battText = createWidget(widget.TEXT, {
-      x: 0, y: BATT_Y, w: DW, h: 36,
-      color: WHITE, text_size: 30,
+    // --- BATTERY: icon + colored % (bottom-center) -----------------------
+    // Battery icon uses the symbols (Nerd) font; glyph reflects charge level.
+    // NOTE: these fa-battery glyphs (U+F24x) are UNVERIFIED on-device — the only
+    // confirmed-rendering range so far is the weather glyphs (U+E3xx). Check on
+    // the next `zeus preview`; fall back to a FILL_RECT battery (NOTES §9.3) if
+    // blank. Charging-state icon is a separate TODO (NOTES §9.7).
+    const BATT_ICON_X = 150
+    const BATT_PCT_X  = 194
+    const battGlyph = (p) =>
+      p >= 88 ? '\uf240' :   // fa-battery_full
+      p >= 63 ? '\uf241' :   // fa-battery_three_quarters
+      p >= 38 ? '\uf242' :   // fa-battery_half
+      p >= 13 ? '\uf243' :   // fa-battery_quarter
+                '\uf244'     // fa-battery_empty
+    const battIcon = boldIcon({
+      x: BATT_ICON_X, y: BATT_Y, w: 40, h: 36,
+      color: WHITE, text_size: 30, font: 'raw/symbols.ttf',
       align_h: align.CENTER_H, align_v: align.CENTER_V,
+      text: '\uf240',
+    })
+    const battText = createWidget(widget.TEXT, {
+      x: BATT_PCT_X, y: BATT_Y, w: 120, h: 36,
+      color: WHITE, text_size: 30,
+      align_h: align.LEFT, align_v: align.CENTER_V,
       text_style: text_style.NONE, text: '--%',
     })
     try {
@@ -139,6 +180,7 @@ WatchFace({
           const p = battery.getCurrent()
           const c = p <= 20 ? BATT_LOW : (p <= 50 ? BATT_MID : BATT_OK)
           battText.setProperty(prop.MORE, { text: p + '%', color: c })
+          battIcon.set({ text: battGlyph(p), color: c })
         } catch (e) {}
       }
       drawBatt()
@@ -146,17 +188,17 @@ WatchFace({
     } catch (e) {}
 
     // --- WEATHER (TEST: static, verify the Nerd Font symbols render) ------
-    // Icon uses the symbols font; temp uses the normal font (symbols font has
-    // no digits/°). If the icon shows a sun and "72°" shows, the font works and
-    // we wire live weather data next. Remove/replace once confirmed.
-    createWidget(widget.TEXT, {
-      x: 148, y: 40, w: 56, h: 50,
+    // Sits just above the battery (WEATHER_Y). Icon uses the symbols font; temp
+    // uses the normal font (symbols font has no digits/°). Static for now — live
+    // weather data + permission is NOTES §9.2. Sun + "72°" confirmed rendering.
+    boldIcon({
+      x: 150, y: WEATHER_Y, w: 56, h: 50,
       color: ORANGE, text_size: 44, font: 'raw/symbols.ttf',
       align_h: align.CENTER_H, align_v: align.CENTER_V,
-      text_style: text_style.NONE, text: '\ue30d',   // nf-weather-day_sunny
+      text: '\ue30d',   // nf-weather-day_sunny
     })
     createWidget(widget.TEXT, {
-      x: 206, y: 40, w: 90, h: 50,
+      x: 206, y: WEATHER_Y, w: 90, h: 50,
       color: WHITE, text_size: 40,
       align_h: align.LEFT, align_v: align.CENTER_V,
       text_style: text_style.NONE, text: '72°',
