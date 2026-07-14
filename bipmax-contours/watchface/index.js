@@ -1,5 +1,5 @@
 /*
- * Background + time (BIG + BOLD via custom font) + steps + day/date circle + battery.
+ * Background + time (BIG + BOLD via custom font) + steps + day/date circle + battery + weather.
  *
  * Bold done RIGHT: a bundled ultra-bold condensed TTF (Anton, OFL) set via the
  * TEXT `font:` property — single draw, no multi-pass. Condensed glyphs let the
@@ -7,12 +7,12 @@
  * assets/<device>/raw/anton.ttf, referenced as 'raw/anton.ttf'.
  *
  * Learnings (NOTES §3d): tags don't work in code; onPerMinute didn't tick (use
- * setInterval); Step needs data:user.hd.step; new Date() works; Battery in
- * @zos/sensor works incl. color updates.
+ * setInterval); Step needs data:user.hd.step; new Date() works; Battery +
+ * Weather in @zos/sensor work incl. onChange listeners + color updates.
  */
 
 import { createWidget, widget, prop, align, text_style } from '@zos/ui'
-import { Time, Step, Battery } from '@zos/sensor'
+import { Time, Step, Battery, Weather } from '@zos/sensor'
 
 const DW = 432
 const DH = 514
@@ -40,7 +40,7 @@ const STEPS_ICON  = 52         // steps icon (symbols font) size
 const STEPS_FONT  = 64         // count now uses TIME font (Anton) — bigger
 const STEPS_H     = 72
 const STEPS_GAP   = 66         // x gap from icon to number (scales with font)
-const STEPS_GLYPH = ''   // fa-shoe_prints (two prints)
+const STEPS_GLYPH = '≁'   // fa-shoe_prints (two prints)
 const CIRC_X  = DW - 84
 const CIRC_Y  = 92
 const CIRC_R  = 54
@@ -49,6 +49,21 @@ const WEATHER_Y  = 400         // weather row sits just above the battery
 
 const DAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
 const pad2 = (n) => (n < 10 ? '0' + n : '' + n)
+
+// Map Zepp weather code to Nerd Font weather glyph (NOTES §9.2).
+// Codes: 0=cloudy, 3=sunny, 5=rain, 13=fog, 28=clear night, etc.
+const weatherGlyph = (code) => {
+  if (code === 3) return ''    // sunny (day)
+  if (code === 28) return ''   // clear (night)
+  if (code === 0 || code === 4) return ''   // cloudy / overcast
+  if (code === 13) return ''   // fog
+  if (code === 11 || code === 17 || code === 22 || code === 23) return ''  // windy
+  if (code === 15 || code === 20) return ''  // thundershower
+  if (code === 2 || code === 6 || code === 9 || code === 16) return ''  // snow
+  if (code === 1 || code === 27) return ''  // shower
+  if ([5, 7, 10, 12, 18, 19, 21, 24].includes(code)) return ''  // rain
+  return ''  // fallback: cloudy
+}
 
 // Faux-bold for symbol-font glyphs. The Symbols Nerd Font is Regular-only (no
 // bold variant — unlike the time, which uses the real bold Anton TTF, NOTES §3d),
@@ -127,11 +142,11 @@ WatchFace({
     drawTime()
     try { setInterval(() => { drawTime(); drawDate() }, 1000) } catch (e) {}
 
-    // --- STEPS: shoe-prints icon + bold count ----
+    // --- STEPS: footprint icon (black) + bold count ----
     // Icon from symbols font (U+E241 footprint, proven range), count in Anton time font (bold).
     createWidget(widget.TEXT, {
       x: STEPS_X, y: STEPS_Y, w: 50, h: STEPS_H,
-      color: ORANGE, text_size: STEPS_ICON, font: 'raw/symbols.ttf',
+      color: 0x000000, text_size: STEPS_ICON, font: 'raw/symbols.ttf',
       align_h: align.LEFT, align_v: align.CENTER_V,
       text_style: text_style.NONE, text: STEPS_GLYPH,
     })
@@ -152,23 +167,19 @@ WatchFace({
 
     // --- BATTERY: icon + colored % (bottom-center) -----------------------
     // Battery icon uses the symbols (Nerd) font; glyph reflects charge level.
-    // NOTE: these fa-battery glyphs (U+F24x) are UNVERIFIED on-device — the only
-    // confirmed-rendering range so far is the weather glyphs (U+E3xx). Check on
-    // the next `zeus preview`; fall back to a FILL_RECT battery (NOTES §9.3) if
-    // blank. Charging-state icon is a separate TODO (NOTES §9.7).
     const BATT_ICON_X = 150
     const BATT_PCT_X  = 194
     const battGlyph = (p) =>
-      p >= 88 ? '\uf240' :   // fa-battery_full
-      p >= 63 ? '\uf241' :   // fa-battery_three_quarters
-      p >= 38 ? '\uf242' :   // fa-battery_half
-      p >= 13 ? '\uf243' :   // fa-battery_quarter
-                '\uf244'     // fa-battery_empty
+      p >= 88 ? '' :   // fa-battery_full
+      p >= 63 ? '' :   // fa-battery_three_quarters
+      p >= 38 ? '' :   // fa-battery_half
+      p >= 13 ? '' :   // fa-battery_quarter
+                ''     // fa-battery_empty
     const battIcon = boldIcon({
       x: BATT_ICON_X, y: BATT_Y, w: 40, h: 36,
       color: WHITE, text_size: 30, font: 'raw/symbols.ttf',
       align_h: align.CENTER_H, align_v: align.CENTER_V,
-      text: '\uf240',
+      text: '',
     })
     const battText = createWidget(widget.TEXT, {
       x: BATT_PCT_X, y: BATT_Y, w: 120, h: 36,
@@ -190,22 +201,37 @@ WatchFace({
       try { battery.onChange(drawBatt) } catch (e) {}
     } catch (e) {}
 
-    // --- WEATHER (TEST: static, verify the Nerd Font symbols render) ------
-    // Sits just above the battery (WEATHER_Y). Icon uses the symbols font; temp
-    // uses the normal font (symbols font has no digits/°). Static for now — live
-    // weather data + permission is NOTES §9.2. Sun + "72°" confirmed rendering.
-    boldIcon({
+    // --- WEATHER: live icon + temp (above battery) --------
+    // Icon = Nerd Font symbol keyed by weather code; temp in °F/°C from device.
+    const weatherIcon = boldIcon({
       x: 150, y: WEATHER_Y, w: 56, h: 50,
       color: ORANGE, text_size: 44, font: 'raw/symbols.ttf',
       align_h: align.CENTER_H, align_v: align.CENTER_V,
-      text: '\ue30d',   // nf-weather-day_sunny
+      text: '',   // fallback sunny; updated with live code
     })
-    createWidget(widget.TEXT, {
+    const weatherTemp = createWidget(widget.TEXT, {
       x: 206, y: WEATHER_Y, w: 90, h: 50,
       color: WHITE, text_size: 40,
       align_h: align.LEFT, align_v: align.CENTER_V,
-      text_style: text_style.NONE, text: '72°',
+      text_style: text_style.NONE, text: '--°',
     })
+    try {
+      const weather = new Weather()
+      const drawWeather = () => {
+        try {
+          const data = weather.getForecast()
+          if (data && data.forecastData && data.forecastData.data && data.forecastData.data[0]) {
+            const today = data.forecastData.data[0]
+            const code = today.code || 0
+            const temp = today.high ? Math.round(today.high) : '--'
+            weatherTemp.setProperty(prop.MORE, { text: temp + '°' })
+            weatherIcon.set({ text: weatherGlyph(code) })
+          }
+        } catch (e) {}
+      }
+      drawWeather()
+      try { weather.onChange(drawWeather) } catch (e) {}
+    } catch (e) {}
   },
 
   onInit() {},
