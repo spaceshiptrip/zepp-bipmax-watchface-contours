@@ -34,9 +34,11 @@ const CSPLIT    = 208 + TIME_XOFF  // colon center: HH right-aligns here, :MM le
 const TIME_FT   = 'raw/anton.ttf'
 
 // Other layout
-const STEPS_X = 30
-const STEPS_Y = 44
-const STEPS_H = 34
+const STEPS_X    = 30
+const STEPS_Y    = 44
+const STEPS_FONT = 42          // bumped up from 30
+const STEPS_H    = 46
+const STEPS_GAP  = 44          // x gap from "S" to the number (scales with font)
 const CIRC_X  = DW - 84
 const CIRC_Y  = 92
 const CIRC_R  = 54
@@ -103,14 +105,14 @@ WatchFace({
 
     // --- STEPS (diagnostic white for now) --------------------------------
     createWidget(widget.TEXT, {
-      x: STEPS_X, y: STEPS_Y, w: 28, h: STEPS_H,
-      color: ORANGE, text_size: 30,
+      x: STEPS_X, y: STEPS_Y, w: 40, h: STEPS_H,
+      color: ORANGE, text_size: STEPS_FONT,
       align_h: align.LEFT, align_v: align.CENTER_V,
       text_style: text_style.NONE, text: 'S',
     })
     const stepsText = createWidget(widget.TEXT, {
-      x: STEPS_X + 34, y: STEPS_Y, w: 240, h: STEPS_H,
-      color: WHITE, text_size: 30,
+      x: STEPS_X + STEPS_GAP, y: STEPS_Y, w: 260, h: STEPS_H,
+      color: WHITE, text_size: STEPS_FONT,
       align_h: align.LEFT, align_v: align.CENTER_V,
       text_style: text_style.NONE, text: '0',
     })
@@ -142,6 +144,23 @@ WatchFace({
       drawBatt()
       try { battery.onChange(drawBatt) } catch (e) {}
     } catch (e) {}
+
+    // --- WEATHER (TEST: static, verify the Nerd Font symbols render) ------
+    // Icon uses the symbols font; temp uses the normal font (symbols font has
+    // no digits/°). If the icon shows a sun and "72°" shows, the font works and
+    // we wire live weather data next. Remove/replace once confirmed.
+    createWidget(widget.TEXT, {
+      x: 148, y: 40, w: 56, h: 50,
+      color: ORANGE, text_size: 44, font: 'raw/symbols.ttf',
+      align_h: align.CENTER_H, align_v: align.CENTER_V,
+      text_style: text_style.NONE, text: '\ue30d',   // nf-weather-day_sunny
+    })
+    createWidget(widget.TEXT, {
+      x: 206, y: 40, w: 90, h: 50,
+      color: WHITE, text_size: 40,
+      align_h: align.LEFT, align_v: align.CENTER_V,
+      text_style: text_style.NONE, text: '72°',
+    })
   },
 
   onInit() {},

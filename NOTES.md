@@ -22,9 +22,9 @@ watchface only.
 folder: `assets/432x514-amazfit-bip-max/`.
 
 **Working on the real watch (verified via `zeus preview`):**
-- ✅ **Background** — reused Garmin `shaded` dark contour art, reshaped to
-  432×514, full-bleed (`widget.IMG`). *(Known issue: rounded top/bottom from the
-  round source — fix = Python re-render, §9.1.)*
+- ✅ **Background** — **natively re-rendered** at 432×514 via Python (no circle
+  mask), full-bleed (`widget.IMG`). Sharp edge-to-edge terrain, no rounded
+  edges. Mt. Wilson center. (Command + method in §9.1.)
 - ✅ **Time** — big, bold, orange `HH` : white `:MM`. Custom **Anton** font
   (`raw/anton.ttf`), ~210px, single draw. `@zos/sensor` `Time` +
   `setInterval` tick. Position tuned via `TIME_XOFF`.
@@ -519,43 +519,130 @@ for public distribution and is optional here.
 
 Not for v1 — captured so we don't lose them.
 
-### 9.1 Fix the background shape (round-art → true square/rectangle fill)
+### 9.1 Fix the background shape (round-art → rectangle) — ✅ DONE
 
-The current background reuses the Garmin **round** art. We squared off the left
-and right sides, but the **top and bottom are still the rounded contour edges**
-of the original circular face, so the terrain looks like it has a rounded top —
-it reads funny on the flat rectangular Bip Max screen.
+**Problem:** the original background reused the Garmin **circle-masked** round art
+(454²). Reshaping it left a **rounded top/bottom** (the curved edge of the masked
+circle) that looked wrong on the flat rectangular screen. Zoom/crop couldn't fix
+it without ~1.5× upscaling (blurry) and losing terrain.
 
-Fix (still no Python re-render needed): **zoom in / scale up the source art so it
-fully covers the 432×514 frame**, pushing the rounded top/bottom edges off-screen
-so only solid terrain fills the rectangle. In practice: scale the 454² source up
-past 514 (e.g. to ~560–600px) and center-crop to 432×514, trading a little more
-edge terrain for a clean full-bleed fill with no rounded corners.
+**Fix (done):** natively **re-rendered** with `render_shaded_contours.py`. The
+script is square-only (`--size`), so we render a full square **without**
+`--circle-mask` (fully packed terrain, no rounded edges) at 2× supersample, then
+downscale + center-crop to 432×514 — sharp, no upscaling.
 
-Rough approach to try (tune the scale until the rounded edges are gone):
+Exact commands used (macOS, from the Garmin repo):
 
 ```bash
-SRC=/Users/jtorres/Workspaces/pnb/garmin/garmin-simple-watchface-contours/resources/drawables
-cp "$SRC/contour_background_dark_30px_west.png" watchface/assets/contour_background.png
-sips -Z 580 watchface/assets/contour_background.png     # zoom in (was 514)
-sips -c 514 432 watchface/assets/contour_background.png # center-crop to 432×514
+cd /Users/jtorres/Workspaces/pnb/garmin/garmin-simple-watchface-contours
+# one-time: the .venv existed but was empty
+.venv/bin/python -m pip install requests tifffile matplotlib numpy scipy scikit-image
+
+# render a full non-masked square (dark recipe, Mt. Wilson center), 2× supersample
+.venv/bin/python render_shaded_contours.py \
+  --size 1028 \
+  --center-lat 34.2257 --center-lon -118.0572 \
+  --sun-azimuth 135 --sun-altitude 40 \
+  --hillshade-min 95 --hillshade-max 225 --gamma 0.8 --contrast 1.1 \
+  --contour-source dem --contour-smoothing 0.8 --contour-interval-feet 100 \
+  --out preview/contour_bipmax_432x514_src.png
+# NOTE: no --circle-mask (that flag is what caused the rounded edges)
+
+# downscale + crop to exactly 432×514, keep a dimension-named artifact
+cp preview/contour_bipmax_432x514_src.png preview/contour_bipmax_432x514.png
+sips -Z 514 preview/contour_bipmax_432x514.png      # 1028² -> 514²
+sips -c 514 432 preview/contour_bipmax_432x514.png  # crop to 514h x 432w
+
+# install into the watchface
+cp preview/contour_bipmax_432x514.png \
+   ../../zepp-apps/watchface/bipmax-contours/assets/432x514-amazfit-bip-max/contour_background.png
 ```
 
-**DECISION (from on-device testing): re-render via Python instead.** The reshape
-approach left a **rounded top/bottom** (leftover from the round Garmin art) that
-looks wrong on the flat rectangular screen. The chosen fix is to run the Python
-renderer through a **venv** and output a **native 432×514 rectangle** with no
-`--circle-mask` — a true flat-edged background. See §4b for the venv setup and
-render commands; goal size is exactly **432 × 514**, no crop, no rounded corners.
+Center = **Mt. Wilson** (Angeles Crest / San Gabriel range), lat `34.2257`, lon
+`-118.0572` (true center; dropped the old `-118.05945` 30px-west composition
+tweak). To retune later: `--radius`/`--zoom` = how much area shows;
+`--hillshade-min/max`, `--gamma`, `--contrast` = darkness/relief; there's also a
+lighter recipe (`--hillshade-min 190 --hillshade-max 255 --gamma 0.65
+--contrast 0.9`).
 
-### 9.2 Weather widget
+### 9.2 Weather widget  (NEXT UP)
 
-Add a weather readout (temp + condition icon, maybe hi/lo). Zepp exposes weather
-via the sensor API (`@zos/sensor` weather / the app-side data channel), which may
-require a `permissions` entry in `app.json` and possibly an app-side script to
-fetch/forward data. Decide placement then (candidate: a second small circle or a
-row opposite the day/date circle). Confirm the exact weather API + permission for
-the Bip Max's Zepp OS version when we build it.
+Add a weather readout: **condition symbol + temperature** (maybe hi/lo).
+
+**Symbols via a Nerd Font (font BUNDLED).** Using **Symbols Nerd Font** (Symbols
+only). `SymbolsNerdFont-Regular.ttf` is bundled at
+`assets/432x514-amazfit-bip-max/raw/symbols.ttf` (~2.4 MB). Use it on a TEXT
+widget via `font: 'raw/symbols.ttf'` with the glyph as a `\uXXXX` escape in
+`text`. IMPORTANT: this font has **no digits/letters/°**, so temperature numbers
+must use a normal font (system or Anton) — only the *icon* uses the symbols font.
+
+**Confirmed weather glyph codepoints** (verified present in the font's cmap; all
+228 `nf-weather-*` glyphs exist, range U+E300–U+E3E3):
+
+In code, use the `\uXXXX` escape. Codepoints:
+
+| condition | code | glyph name |
+|---|---|---|
+| clear / sunny (day) | `\ue30d` | weather-day_sunny |
+| clear (night) | `\ue32b` | weather-night_clear |
+| cloudy | `\ue312` | weather-cloudy |
+| partly cloudy (day) | `\ue302` | weather-day_cloudy |
+| partly cloudy (night) | `\ue37e` | weather-night_alt_cloudy |
+| rain | `\ue318` | weather-rain |
+| showers | `\ue319` | weather-showers |
+| snow | `\ue31a` | weather-snow |
+| thunderstorm | `\ue31d` | weather-thunderstorm |
+| fog | `\ue313` | weather-fog |
+| windy | `\ue31e` | weather-windy |
+| thermometer | `\ue350` | weather-thermometer |
+| degrees | `\ue33e` | weather-degrees |
+| celsius / fahrenheit | `\ue339` / `\ue341` | weather-celsius / fahrenheit |
+
+**On-device render: CONFIRMED (works).** The static sun + `72°` test rendered
+correctly on the real Bip Max — the Symbols Nerd Font works via
+`font: 'raw/symbols.ttf'`. (Test block still in `index.js`; remove it when the
+real weather widget lands.)
+
+**Escape caveat (BMP vs supplementary):** JS `'\uXXXX'` only covers codepoints
+<= U+FFFF. Many Material-Design Nerd glyphs live ABOVE U+FFFF (e.g. `md-*` at
+U+F0xxx/U+F1xxx) and need the ES6 form `'\u{f0dfa}'` or
+`String.fromCodePoint(0xf0dfa)`. The weather glyphs (U+E3xx) are all BMP, so
+plain `'\uXXXX'` is fine for them.
+
+**Weather DATA source (still to confirm):** likely `@zos/sensor` Weather (a
+`getForecast`/current API) — will need the weather **permission** in `app.json`
+(candidate string form `data:user.hd.*` / a weather-specific one; confirm from
+docs/samples) and possibly an app-side script to fetch/forward. Confirm the exact
+API + permission for the Bip Max's Zepp OS version when we build it.
+
+Placement candidate: a row opposite the day/date circle, or bottom near battery.
+
+### 9.5 Reusable symbol font
+
+The Nerd Font symbols `.ttf` (`raw/symbols.ttf`, §9.2, render CONFIRMED) is
+reusable for any icon-as-text need — cleaner than PNG icons and single-draw.
+Document the exact glyph codepoints we use as we add them.
+
+### 9.6 Steps icon — hiking boot / shoe prints (replace the "S")
+
+User wants the steps "S" replaced with a **hiking boot** or **shoe prints** glyph
+from the symbols font. Candidates found in the font's cmap:
+
+| glyph name | code | notes |
+|---|---|---|
+| `fa-shoe_prints` | `\uee14` | **two shoe prints — recommended** (BMP, simple escape) |
+| `fae-footprint` | `\ue241` | single footprint (BMP) |
+| `fa-person_hiking` | `\uef02` | hiking *figure* w/ pack (BMP) |
+| `md-shoe_print` | `\u{f0dfa}` | single shoe print (supplementary → needs `\u{}`) |
+| `md-foot_print` | `\u{f0f52}` | footprints (supplementary) |
+| `md-hiking` | `\u{f0d7f}` | hiking figure (supplementary) |
+| `md-shoe_sneaker` | `\u{f15c8}` | closest to a "boot" (supplementary) |
+
+No literal *hiking boot* glyph exists in this set. **Recommendation:**
+`fa-shoe_prints` (`\uee14`) for a clean two-print steps icon — it's BMP so no
+`\u{}` gymnastics. Swap the orange "S" TEXT for a `font:'raw/symbols.ttf'` TEXT
+with that glyph; keep the count beside it. Mind the §9.2 BMP-vs-supplementary
+escape caveat if we pick an `md-*` option instead.
 
 ### 9.3 Battery visual + time-remaining
 
