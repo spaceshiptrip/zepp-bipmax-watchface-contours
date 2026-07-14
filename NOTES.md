@@ -28,13 +28,18 @@ folder: `assets/432x514-amazfit-bip-max/`.
 - ✅ **Time** — big, bold, orange `HH` : white `:MM`. Custom **Anton** font
   (`raw/anton.ttf`), ~210px, single draw. `@zos/sensor` `Time` +
   `setInterval` tick. Position tuned via `TIME_XOFF`.
-- ✅ **Steps** — orange `S` + count, top-left. `@zos/sensor` `Step`. Needed the
-  **`data:user.hd.step`** permission in `app.json`. *(Still diagnostic white —
-  final styling pending, §9.4.)*
+- ✅ **Steps** — **shoe-prints PNG icon** (`shoeprint.png`, 56×56, `widget.IMG`)
+  + count in the Anton time font, top-left. `@zos/sensor` `Step`. Needs the
+  **`data:user.hd.step`** permission in `app.json`. *(Font glyphs boxed on-device
+  → went PNG; see §3d font-subset trap.)*
 - ✅ **Day/Date circle** — top-right dark disc + orange ring + weekday (orange)
   over date (white), from JS `new Date()`.
-- ✅ **Battery** — colored `%` bottom-center (green/yellow/red). `@zos/sensor`
-  `Battery`. *(Bar-graph + days-remaining pending, §9.3.)*
+- ✅ **Weather** — live icon + temp above the battery. `@zos/sensor` `Weather`
+  `getForecast()`; icon = Nerd Font symbol keyed by weather code (§9.2). Needs
+  **`data:user.hd.weather`** permission.
+- ✅ **Battery** — **lightning PNG icon** (`lightning.png`, 34×34, `widget.IMG`) +
+  colored `%` (green/yellow/red), bottom-center. `@zos/sensor` `Battery`. Icon is
+  **static** for now; **charging-state + level indication WANTED** — see §9.3.
 
 **How it's built:** all foreground is code (`watchface/index.js`) reading sensors
 and setting text — NOT the GUI Watchface Maker. Everything wrapped in `try/catch`
@@ -344,9 +349,20 @@ rasterization). Use this whenever the font route fights back:
 Trade-off: one more asset file to manage vs. a guaranteed render. Overhead worry
 is unfounded — IMG is cheap; the 2.4 MB font already dwarfs any icon PNG.
 
-**Status:** steps footprint ✅ fixed via Mitigation A (inline `''`). Battery
-icon ⬛ still boxes — apply A2 or B next (candidate charging glyph: `oct-zap` ⚡
-U+26A1). See §9.3 / §9.7.
+**Status (RESOLVED for both icons — went PNG):**
+- **Steps** ✅ — first fixed via Mitigation A (inline `\ue241` footprint), then
+  swapped to a **PNG** (`shoeprint.png`, 56×56) because the user wanted the
+  two-shoe-prints art. Renders perfectly.
+- **Battery** ✅ — the font glyph (`fa-battery_*` U+F24x) always boxed. Replaced
+  with a **PNG** (`lightning.png`, 34×34) via `widget.IMG`. Renders. Currently a
+  **static** bolt (no level/charge logic yet — that's §9.3).
+
+**Takeaway:** for THIS device, small transparent **PNG icons are the reliable
+default** for any non-text glyph. Font symbols only proved reliable in the U+E3xx
+weather range referenced as inline literals; everything else, use a PNG. Sizing
+recipe (macOS): `cp <src> assets/<device>/<name>.png && sips -z <h> <w> <name>.png`
+(keep alpha; export at the on-screen pixel size — `widget.IMG` does not scale).
+Sizes used: steps 56×56, battery 34×34 (battery text is smaller).
 
 ### Rules of thumb going forward
 1. Add one element per `zeus preview`, verify on-device, then the next.
@@ -730,25 +746,52 @@ No literal *hiking boot* glyph exists in this set. **Recommendation:**
 with that glyph; keep the count beside it. Mind the §9.2 BMP-vs-supplementary
 escape caveat if we pick an `md-*` option instead.
 
-### 9.3 Battery visual + time-remaining
+### 9.3 Battery visual — charging state + level (WANTED)
 
-**Current (in `index.js`):** bottom-center row = **battery icon + colored `%`**,
-sitting just below the weather row (both anchored at `x:150`). The icon is a
-Nerd-Font `fa-battery_*` glyph (`\uf240`–`\uf244` in `symbols.ttf`) chosen by
-level, recolored green/yellow/red along with the text. ⚠️ These **U+F24x** glyphs
-are **UNVERIFIED on-device** — only the U+E3xx weather glyphs are confirmed so far
-(§9.2). Check the next `zeus preview`; if the icon is blank, the font lacks that
-range → fall back to the FILL_RECT battery below, or pick a confirmed glyph range.
+**Current (in `index.js`):** bottom-center row = **lightning PNG icon + colored
+`%`**, sitting below the weather row (icon anchored at `x:150`, text at `x:194`).
+- Icon: `assets/<device>/lightning.png` (**34x34**, transparent) via `widget.IMG`.
+  It is **STATIC** right now — a plain bolt, always shown, no logic behind it.
+- `%` text: `@zos/sensor` `Battery` `getCurrent()` (0-100), color-coded
+  green/yellow/red (`>50` / `21-50` / `<=20`), updated on `onChange`.
+- History: the earlier `fa-battery_*` **font glyph boxed** on-device (font-subset
+  trap, section 3d). Went PNG — the reliable path.
 
-- **Battery-shaped bar graph**: draw a battery icon (rounded `FILL_RECT` body +
-  a small nub) with an inner fill `FILL_RECT` whose **width scales with the
-  percentage** and recolors green/yellow/red. Update the fill width in the
-  `Battery.onChange`/tick handler. (Confirm `FILL_RECT` width is updatable via
-  `setProperty(prop.MORE, { w })`; if not, recreate the fill or use a
-  `data_type.BATTERY` `IMG_LEVEL` widget with battery-frame images.)
-- **Battery → days remaining**: if Zepp exposes an estimated-runtime API, show
-  "~N days". RESEARCH NEEDED — there may be no direct API; fallback is to
-  estimate from percentage and a known drain rate, or skip if unavailable.
+**GOAL (user wants BOTH): the icon should indicate _charging state_ AND _battery
+level_.** Intended behavior:
+- **Charging** -> show the **lightning bolt** (`lightning.png`) = "plugged in".
+- **Not charging** -> show a **battery icon whose fill reflects the level**
+  (full -> empty), recolored green/yellow/red to match the `%`.
+
+**Design plan (all PNG-based — fonts box on this device, section 3d):**
+1. **Get charging state.** RESEARCH NEEDED — confirm the Zepp API. Candidates:
+   `@zos/sensor` `Battery` may expose a charging flag/state or a `getStatus()`;
+   or a separate `@zos/device` power/charger API. Verify field name + values on
+   `zeus preview` before wiring. Until confirmed, we cannot branch on it.
+2. **Level as PNG frames.** Prepare a small set of battery PNGs (e.g. `batt_0.png`
+   ... `batt_4.png` for empty->full, 34x34, transparent) OR use a Zepp
+   **`IMG_LEVEL`** widget (`data_type.BATTERY`) that maps a value to a frame strip
+   — cleaner than swapping `src` manually. Confirm `IMG_LEVEL` works on this
+   device first (it may itself be a black box; test with one build).
+3. **Swap logic** in `drawBatt`: `if (charging) show lightning.png; else show the
+   level frame for getCurrent()`. With plain IMG, either toggle two overlapping
+   IMG widgets' visibility, or `setProperty({ src })` the icon (confirm IMG `src`
+   is updatable; if not, keep both widgets and show/hide). With `IMG_LEVEL`, just
+   set the level and overlay the bolt when charging.
+4. **Recolor by level.** PNGs cannot be recolored at runtime like TEXT `color:`.
+   Either bake green/yellow/red into the frame PNGs, or keep the icon monochrome
+   and rely on the `%` text color for the level cue.
+
+**Alternative (no charge API): battery-shaped bar graph** — draw a battery outline
+(`FILL_RECT` body + small nub) with an inner fill `FILL_RECT` whose **width scales
+with `%`** and recolors green/yellow/red; update width in `onChange`. (Confirm
+`FILL_RECT` width is updatable via `setProperty(prop.MORE, { w })`; if not,
+recreate the fill.) `FILL_RECT`/shapes render fine on-device (unlike font glyphs),
+so this is a solid fallback if `IMG_LEVEL`/charge-state do not pan out.
+
+**Battery -> days remaining** (nice-to-have): if Zepp exposes an estimated-runtime
+API, show "~N days". RESEARCH NEEDED — likely no direct API; fallback is to
+estimate from `%` + a known drain rate, or skip.
 
 ### 9.4 Polish pass (numbers must POP)
 
@@ -776,16 +819,13 @@ API). Targets requested:
 - **Steps** → open the current **workout / activity** screen.
 - **Date** circle → open the **calendar**.
 
-**Charging state (drives the battery icon choice):** detect whether the watch is
-**charging** and swap the battery glyph to a charging variant (e.g. a
-charging-bolt battery — candidates: `nf-md-battery_charging_*`, which live in the
-**supplementary plane** so they need the `\u{...}` escape per the §9.2 BMP caveat,
-not plain `\uXXXX`). RESEARCH NEEDED — confirm the Zepp charge-state API
-(candidate: `@zos/sensor` `Battery` may expose a charging flag/state, or there's a
-separate power/charger API). Until confirmed, the icon reflects **level only**
-(§9.3, `fa-battery_*`).
+**Charging state + battery level** — this has moved to **§9.3** and is now a
+wanted feature (user confirmed they want BOTH charging state and level shown).
+The battery icon is a static `lightning.png` today; §9.3 has the full PNG-based
+design plan (charging → bolt, else level-fill frames) and the charge-state API to
+confirm. (Icon glyphs box on this device, so it's PNG/`IMG_LEVEL`, not fonts.)
 
-All of the above are **later development** — not v1.
+The tap-to-open complications above are **later development** — not v1.
 
 > **Weather-icon assets note:** `resources/weather-icons-master/` (Erik Flowers'
 > Weather Icons) is the **same `wi-*` set already embedded in `symbols.ttf`** as
