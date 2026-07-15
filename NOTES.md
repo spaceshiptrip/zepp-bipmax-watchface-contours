@@ -544,9 +544,8 @@ heart rate, `[CAL]` calories, `[YEAR]`/`[MON(_Z)]`/`[DAY(_Z)]` date,
 `@zos/sensor` + `new Date()`.
 
 Match the palette from §1. Zepp text has no built-in outline (unlike the Garmin
-`drawOutlined*` helpers); where text sits over busy terrain, either bake a faint
-dark plate into the PNG under text zones or put a semi-transparent dark
-`FILL_RECT` behind the text.
+`drawOutlined*` helpers); where text sits over busy terrain, use the outline /
+drop-shadow / plate techniques in the **detailed design at §9.4**.
 
 ---
 
@@ -793,17 +792,165 @@ so this is a solid fallback if `IMG_LEVEL`/charge-state do not pan out.
 API, show "~N days". RESEARCH NEEDED — likely no direct API; fallback is to
 estimate from `%` + a known drain rate, or skip.
 
-### 9.4 Polish pass (numbers must POP)
+### 9.4 Text outline + drop shadow (DETAILED DESIGN)
 
-Make the foreground readouts stand out over the busy terrain:
-- Steps currently uses diagnostic **white**; pick final colors and make the
-  numbers larger / higher-contrast so they "pop."
-- Zepp `TEXT` has no built-in outline (unlike Garmin `drawOutlined*`). To pop
-  over terrain: bake a faint dark plate into the PNG under each text zone, OR put
-  a semi-transparent dark `FILL_RECT`/rounded pill behind the number, OR add a
-  manual 1px offset "shadow" by drawing the text twice (dark behind, color on
-  top). Apply to time, steps, date, battery.
-- Revisit font sizes/positions once the new 432×514 background (§9.1) is in.
+**Goal.** Make the foreground readouts — time, steps count, date, battery `%`,
+weather temp — POP over the busy terrain, the way the Garmin face used
+black-outlined text.
+
+**Hard constraint (confirmed).** Zepp OS `@zos/ui` TEXT has **no native
+outline / stroke / shadow** property. `text_style` offers only `NONE` / `WRAP` /
+`CHAR_WRAP`; `STROKE_RECT` outlines a *rectangle*, not text. So an outline or
+shadow must be **faked** (extra draws), replaced with a **backing plate**, or
+**baked into an image**.
+
+**Font-subset is NOT a problem here.** Unlike the PUA symbol glyphs (§3d trap),
+the **Anton** Latin font renders all digits 0–9 even though only `'0'`/`':'`
+appear as inline literals (proven: the live clock shows every digit). So an
+outline built from **dark Anton copies of the same string** is subset-safe — the
+dark layers reuse the fill's exact `text`, introducing no new glyphs. Same holds
+if we ever outline a symbol glyph.
+
+**Terminology.**
+- **Outline** = glyph ringed by dark on all sides → several dark copies offset in
+  a ring *around* a center fill copy.
+- **Drop shadow** = a single dark copy offset one direction (down-right) *behind*
+  the fill → gives depth, cheaper than a full ring.
+
+#### Techniques (most→least faithful, with cost)
+
+| technique | look | extra widgets / number | runtime cost | notes |
+|---|---|---|---|---|
+| 8-way outline | full crisp ring | 8 dark + 1 fill = **9** | N setProps on change | heaviest; best ring |
+| 4-way outline | good ring | 4 dark + 1 fill = **5** | cheap | usually enough at 1–2px |
+| drop shadow | depth, not ring | 1 dark + 1 fill = **2** | cheapest fake | fast, reads well |
+| contrast plate | dark pad behind | **1** static FILL_RECT | **zero** per update | not an outline; boosts legibility |
+| baked-image digits | true outline in art | 0 (IMG per slot) | **zero** | pre-render PNGs; loses font-size flexibility; one set per color |
+
+#### Performance — the real answer
+
+The earlier worry ("does faking it force constant redraws, like ray tracing?") —
+**no.** Two reasons:
+1. Each extra copy is a cheap glyph blit, not a compute-heavy op.
+2. The cost is paid **only when the value changes** — *if* we update-on-change.
+
+**Key optimization — update-on-change.** `index.js` currently repaints the time
+every second (`setInterval(…, 1000)`), even though `HH:MM` changes once a minute.
+With an outline (N copies) that would needlessly repaint N widgets every second.
+Fix: cache the last string; only `setProperty` when it actually changes. Then the
+time outline repaints ~once/minute, steps/weather/battery only on their
+`onChange`. Even an 8-way outline becomes effectively free at runtime.
+
+**So the only real budget is WIDGET COUNT, not redraw cost.** 8-way on every
+readout adds a lot: time(hh+mm) 18 + steps 9 + date 9 + battery% 9 + weather 9 ≈
+**54** extra static widgets. Zepp handles many widgets, but to stay lean prefer
+**4-way (5/number)** or **drop shadow (2/number)**; reserve 8-way for the hero
+time only if it needs it.
+
+#### Recommended helper API — `outlined()`
+
+Generalize the existing `boldIcon()` into an `outlined()` builder: it creates the
+**dark layers first** (so they render behind), then the **colored fill last** (on
+top), and returns a `.set(text)` that updates every layer at once, with an
+internal last-value guard so it no-ops when unchanged.
+
+```js
+// --- offset presets (unit steps; multiplied by radius) ---
+const OUTLINE_8 = [[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]]
+const OUTLINE_4 = [[0,-1],[0,1],[-1,0],[1,0]]
+const SHADOW_SE = [[1,1]]            // drop shadow, down-right (use radius 2)
+
+// base = a normal TEXT config: x,y,w,h,color,text_size,font,align_h,align_v,text
+// opts = { offsets: OUTLINE_4, outline: 0x000000, radius: 1 }
+function outlined(base, opts) {
+  const offs = (opts && opts.offsets) || OUTLINE_4
+  const oc   = (opts && opts.outline != null) ? opts.outline : 0x000000
+  const r    = (opts && opts.radius) || 1
+  const dark = []
+  // 1) DARK layers first → drawn behind (Zepp z-order = creation order)
+  for (let i = 0; i < offs.length; i++) {
+    dark.push(mkText(base, base.x + offs[i][0]*r, base.y + offs[i][1]*r, oc))
+  }
+  // 2) FILL last → on top, in base.color
+  const fill = mkText(base, base.x, base.y, base.color)
+  let last = base.text
+  return {
+    set: (text) => {
+      if (text === last) return                 // update-on-change: no-op if same
+      last = text
+      for (let i = 0; i < dark.length; i++) dark[i].setProperty(prop.MORE, { text })
+      fill.setProperty(prop.MORE, { text })
+    },
+    setFill: (props) => fill.setProperty(prop.MORE, props),  // e.g. battery color
+  }
+}
+
+// build one TEXT copy explicitly (do NOT rely on object spread through the
+// toolchain — mirror how boldIcon builds each layer field-by-field)
+function mkText(base, x, y, color) {
+  return createWidget(widget.TEXT, {
+    x, y, w: base.w, h: base.h, color,
+    text_size: base.text_size, font: base.font,
+    align_h: base.align_h, align_v: base.align_v,
+    text_style: text_style.NONE, text: base.text,
+  })
+}
+```
+
+Design notes:
+- **Draw order:** Zepp draws in creation order (later = on top). Dark layers must
+  be created *before* the fill. Give every layer the same `w/h/align` so glyphs
+  overlap exactly; only x/y differ.
+- **No object spread:** build each layer field-by-field (`mkText`) — spread
+  `{...base}` is not trusted through the build toolchain. This mirrors the current
+  `boldIcon` pattern.
+- **Battery color:** the `%` recolors by level. Use `setFill({ color })` so ONLY
+  the top layer changes color (outline stays black), and `.set(text)` for the
+  number. Keep the last-value guard per-field if needed.
+- **This supersedes `boldIcon`:** `boldIcon` (weight-only overdraw for the
+  no-bold symbol font) becomes a special case of `outlined` where the "outline"
+  color equals the fill color. Could keep both or fold `boldIcon` into `outlined`.
+
+#### Per-element plan
+- **Time (hero):** `OUTLINE_4`, black, radius 1–2, on hh and mm. Convert the tick
+  to update-on-change (compute the strings, `set()` only when changed) — this also
+  kills the wasteful every-second repaint.
+- **Steps count:** `OUTLINE_4` (Anton) or `SHADOW_SE`.
+- **Date / weekday:** already on the dark circle → probably no outline needed;
+  if kept, a drop shadow is plenty.
+- **Battery %:** `OUTLINE_4`; `setFill({ color })` for the level color.
+- **Weather temp:** `SHADOW_SE` or `OUTLINE_4`.
+- **Icons (shoeprint / lightning / weather glyph):** already weighted by
+  `boldIcon`. A dark ring could reuse `outlined`, but PNG icons are better
+  exported with the outline **baked into the pixels** (cheaper than overdrawing a
+  glyph).
+
+#### Contrast plate (cheap companion / fallback)
+A single semi-transparent dark `FILL_RECT` (rounded via `radius`) behind a readout
+boosts legibility for ~zero cost. Verify `FILL_RECT` supports **`alpha`** on this
+device (the `CIRCLE` sample used `alpha: 200`; confirm the same on `FILL_RECT`).
+Good for any readout that still gets lost in terrain, and combinable with a light
+outline.
+
+#### If overdraw looks muddy at 210px: baked-image digits
+Crispest true outline at literally zero runtime cost:
+- Pre-render `0–9` + `:` PNGs at display size with the outline already in the
+  pixels (one set per color: orange HH, white MM), place via `TEXT_IMG`
+  (`font_array`) or `IMG_TIME`.
+- Pro: pixel-perfect, single draw per slot, no widget-count blowup.
+- Con: regenerate the set on any size/color/outline change; lose the easy
+  `text_size` tweak. Reserve for the final locked design.
+
+#### Recommendation (order of attack)
+1. Add `outlined()`; apply **`OUTLINE_4` black radius 1 to the time**, plus
+   **update-on-change**. Preview.
+2. If the time pops, extend to steps / battery / weather (4-way or drop shadow to
+   keep widget count down).
+3. Escalate the hero time to `OUTLINE_8` or **baked-image digits** only if edges
+   look rough at 210px.
+4. Keep the **contrast plate** in reserve for any readout still lost in terrain.
+
+Also: revisit font sizes/positions after the background is final (§9.1 done).
 
 ### 9.7 Interactive complications (clickable) + charging state
 
