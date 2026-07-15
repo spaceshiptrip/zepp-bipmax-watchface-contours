@@ -212,7 +212,9 @@ WatchFace({
           const data = weather.getForecast()
           if (data && data.forecastData && data.forecastData.data && data.forecastData.data[0]) {
             const today = data.forecastData.data[0]
-            const code = today.code || 0
+            // Condition code is the `index` field (0-28), NOT `code` — `code`
+            // doesn't exist, so it was always undefined→0→cloudy. See NOTES §9.2.
+            const code = (typeof today.index === 'number') ? today.index : 0
             const temp = today.high ? Math.round(today.high) : '--'
             weatherTemp.setProperty(prop.MORE, { text: temp + '°' })
             weatherIcon.set({ text: weatherGlyph(code) })

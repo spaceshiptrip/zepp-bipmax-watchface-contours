@@ -710,11 +710,34 @@ U+F0xxx/U+F1xxx) and need the ES6 form `'\u{f0dfa}'` or
 `String.fromCodePoint(0xf0dfa)`. The weather glyphs (U+E3xx) are all BMP, so
 plain `'\uXXXX'` is fine for them.
 
-**Weather DATA source (still to confirm):** likely `@zos/sensor` Weather (a
-`getForecast`/current API) — will need the weather **permission** in `app.json`
-(candidate string form `data:user.hd.*` / a weather-specific one; confirm from
-docs/samples) and possibly an app-side script to fetch/forward. Confirm the exact
-API + permission for the Bip Max's Zepp OS version when we build it.
+**Weather DATA source — RESOLVED + wired (✅ on-device).** `@zos/sensor` `Weather`,
+permission **`data:user.hd.weather`** in `app.json`. Read with:
+```js
+const { forecastData, tideData, cityName } = new Weather().getForecast()
+const today = forecastData.data[0]        // data[0] = today
+// each element has ONLY: { index, high, low }
+```
+
+> ⚠️ **GOTCHA (cost us a bug): the condition code is the `index` field, NOT `code`.**
+> `forecastData.data[i]` exposes `{ index, high, low }` and **nothing else** — there
+> is no `.code`, `.weather`, or `.icon`. Despite the name, **`index` is the weather
+> **condition code (0–28)**, not the array position. We first read `today.code`
+> (undefined) → `undefined || 0` → **always 0 = cloudy**, regardless of real
+> weather (temp was fine because `high` is real). Fix: `today.index`. Guard with
+> `typeof today.index === 'number'` since 0 is a valid code (cloudy).
+
+**Condition code → glyph** is done in `weatherGlyph(code)` in `index.js`, keyed to
+the **0–28** Zepp weather codes: `0` cloudy, `1` shower, `2` snow-shower, `3`
+**sunny**, `4` overcast, `5` light rain, `7`/`10` rain, `6`/`9`/`16` snow, `11`/
+`17`/`22`/`23` sand/wind, `13` fog, `15`/`20` thunder, `26` cloudy-night, `27`
+shower-night, `28` clear-night, etc. All map to E3xx `nf-weather-*` glyphs (the
+one range that renders on-device, §3d), so every condition icon works — verified
+that cloudy (`\ue312`) renders even though it only appears in the function body.
+
+**Caveat (known Zepp quirk):** sensor forecast values (temp/condition) can differ
+from the phone's built-in Weather app — they come from Zepp's own feed. `high` is
+today's HIGH, not the live current temp; good enough here. Data only refreshes when
+the phone syncs weather to the watch.
 
 Placement candidate: a row opposite the day/date circle, or bottom near battery.
 
