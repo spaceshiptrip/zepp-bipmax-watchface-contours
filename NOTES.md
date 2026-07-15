@@ -825,7 +825,7 @@ if we ever outline a symbol glyph.
 | 4-way outline | good ring | 4 dark + 1 fill = **5** | cheap | usually enough at 1–2px |
 | drop shadow | depth, not ring | 1 dark + 1 fill = **2** | cheapest fake | fast, reads well |
 | contrast plate | dark pad behind | **1** static FILL_RECT | **zero** per update | not an outline; boosts legibility |
-| baked-image digits | true outline in art | 0 (IMG per slot) | **zero** | pre-render PNGs; loses font-size flexibility; one set per color |
+| baked-image digits (`IMG_TIME`) | true baked shadow/outline | 1 widget (clock) | **best** — OS auto-updates, no JS timer | pre-render PNGs; ~2–3 MB TGA; loses font-size flexibility; one set per color. Full analysis below. |
 
 #### Performance — the real answer
 
@@ -932,23 +932,93 @@ device (the `CIRCLE` sample used `alpha: 200`; confirm the same on `FILL_RECT`).
 Good for any readout that still gets lost in terrain, and combinable with a light
 outline.
 
-#### If overdraw looks muddy at 210px: baked-image digits
-Crispest true outline at literally zero runtime cost:
-- Pre-render `0–9` + `:` PNGs at display size with the outline already in the
-  pixels (one set per color: orange HH, white MM), place via `TEXT_IMG`
-  (`font_array`) or `IMG_TIME`.
-- Pro: pixel-perfect, single draw per slot, no widget-count blowup.
-- Con: regenerate the set on any size/color/outline change; lose the easy
-  `text_size` tweak. Reserve for the final locked design.
+#### Baked-image digits via `IMG_TIME` (drop-shadow baked in) — full analysis
+
+Instead of overdrawing a font, provide **pre-rendered `0–9` PNGs with the drop
+shadow (or outline) baked into the pixels** and let a dedicated widget composite
+them. For the **clock**, the right widget is **`IMG_TIME`** (not `TEXT_IMG`) —
+it is **OS-driven and auto-updates from system time**, so it needs **no JS timer
+at all**.
+
+**`IMG_TIME` API (confirmed in the `basketball` sample).** Hours and minutes take
+**separate** digit arrays, so the two-color look is preserved:
+```
+createWidget(widget.IMG_TIME, {
+  hour_zero: 1,                 // 1 = leading zero (09 not 9)
+  hour_startX, hour_startY,     // top-left of the hour block
+  hour_array:  ORANGE_DIGITS,   // ['t/0.png'..'t/9.png'] in ORANGE
+  hour_space:  0,               // px between the two hour digits
+  minute_zero: 1,
+  minute_startX, minute_startY,
+  minute_array: WHITE_DIGITS,   // white 0-9 → white minutes
+  minute_space: 0,
+  show_level: show_level.ONLY_NORMAL,   // normal (awake) vs AOD
+})
+```
+- **Two colors:** `hour_array` = orange digit set, `minute_array` = white digit
+  set → orange HH / white MM, exactly today's look, baked shadow included.
+- **Colon:** a separate `widget.IMG` (a `colon.png` with matching height/shadow)
+  placed between the blocks.
+- **AOD nearly free:** add a second `IMG_TIME` with `show_level: ONAL_AOD` (note
+  the sample's spelling) pointing at a **dim/grey** digit set → clean AOD clock
+  (covers §6 item 6). Awake vs AOD are just two `show_level` layers.
+
+**Efficiency — the honest tradeoff (this is the "resource hog" answer):**
+
+| axis | font + overdraw | `IMG_TIME` baked digits |
+|---|---|---|
+| **Runtime CPU / battery** | per-draw glyph rasterization; today a `setInterval(1000)` repaints every second | **best** — OS-driven auto-update **removes the JS timer**; cheap bitmap blits; shadow baked = zero shadow cost |
+| **Memory / bundle** | **best** — one ~170 KB Anton TTF rasterizes any size | worse — images bundle as **uncompressed TGA**; a ~200px digit ≈ 100–150 KB each; 0–9 × 2 colors + colon ≈ **~2–3 MB** |
+| **Flexibility** | **best** — change size/color/shadow freely | rigid — any size/color/shadow change = **regenerate the whole set** |
+| **Widget count** | outline adds N layers/number | one `IMG_TIME` (+1 colon, +1 AOD layer) |
+
+**Takeaway.** "More efficient" and "minimal memory" are **different axes**:
+`IMG_TIME` **trades memory for runtime/battery**. Since the real hog is the
+per-second redraw, `IMG_TIME` is the **best choice for the clock** — it deletes
+the timer and bakes the shadow. It is **not** the memory-minimal option (the font
+is). The added ~2–3 MB is bounded and is dwarfed by the 2.4 MB symbols font
+already bundled. **Recommendation: `IMG_TIME` for the hero clock only; keep the
+Anton font for steps/other text** (a light outline or update-on-change there).
+A memory-*and*-runtime-cheap middle path that needs no images: keep Anton but make
+the time **update-on-change** — also removes the per-second redraw, just no baked
+shadow.
+
+**Asset spec (what the digit PNGs need to be):**
+- `0–9` at final display size (~**200 px tall**), **transparent** background.
+- **Monospace / consistent width** per digit so `hour_space`/`minute_space`
+  layout stays even (number fonts fix digit advance; match that).
+- **Drop shadow (or outline) baked into the pixels**, consistent offset/blur
+  across all digits.
+- **Two sets** for the two-color clock: **orange 0–9** and **white 0–9**; plus a
+  **colon** image at matching height + shadow.
+- Optional **dim/grey 0–9** (+ colon) for the AOD `show_level` layer.
+- Delivered as PNG w/ alpha; build converts to TGA (`PNG2TGA`) automatically.
+  Export at the on-screen pixel size — `IMG_TIME` places images at native size.
+- Naming suggestion: `time/o0.png…o9.png` (orange), `time/w0.png…w9.png` (white),
+  `time/colon_o.png` / `time/colon_w.png`, `time/d0.png…` (dim/AOD).
+
+`TEXT_IMG` (the string-driven cousin, `font_array` + a `text`) is the analogous
+route for **non-clock** numbers (steps count) if we ever want baked-shadow digits
+there too — but for steps the font + a light shadow is simpler and lighter.
 
 #### Recommendation (order of attack)
-1. Add `outlined()`; apply **`OUTLINE_4` black radius 1 to the time**, plus
-   **update-on-change**. Preview.
-2. If the time pops, extend to steps / battery / weather (4-way or drop shadow to
-   keep widget count down).
-3. Escalate the hero time to `OUTLINE_8` or **baked-image digits** only if edges
-   look rough at 210px.
-4. Keep the **contrast plate** in reserve for any readout still lost in terrain.
+
+Two viable strategies for the hero time — **user's choice**, decide before coding:
+
+- **Path A — font + outline (no new assets).** Add `outlined()`; apply
+  **`OUTLINE_4` black radius 1** to the time; switch the tick to
+  **update-on-change**. Lowest memory, most flexible, no PNGs to make. Shadow is
+  synthetic (offset copies), not baked.
+- **Path B — `IMG_TIME` baked-shadow digits (user supplies PNGs).** Best
+  runtime/battery (OS-driven, no timer) and a pixel-perfect baked shadow; costs
+  ~2–3 MB of digit TGA and loses font-size flexibility. Needs the orange + white
+  (+ optional dim AOD) digit sets per the asset spec above. Also gets us the AOD
+  clock almost for free.
+
+Either way, for the **other** readouts (steps / battery / weather) keep the font
+and use **`OUTLINE_4` or a drop shadow** (update-on-change), with the **contrast
+plate** in reserve for anything still lost in terrain. Don't image-ify
+everything — only the hero clock is worth Path B.
 
 Also: revisit font sizes/positions after the background is final (§9.1 done).
 
